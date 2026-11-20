@@ -1,0 +1,29 @@
+# The record exports the group axis P and the parametric row count M_p (schema
+# generalized-gemm-nest/2, additive): read off the levels and views, no claim of their own.
+# grouped-gemm-triton (tools/) reads them.
+DEFINE: %{opts} = --index-bit-width=16 "--authorize=roots 0 and 2 are separate,roots 1 and 2 are separate" --max-level=1 --candidates-per-group=1 --timeout-ms=20000 --rlimit=2000000
+
+# A batch with constant rows: a group axis, no symbolic extent.
+RUN: %gemm-opt %S/Inputs/grouped.mlir --nest-report --function=batched %{opts} -o %t.batched.json
+RUN: %python %S/Inputs/group_fields.py %t.batched.json | FileCheck %s --check-prefix=BATCHED
+BATCHED: batched nest 0: VERIFIED_NOT_MAPPED
+BATCHED-NEXT: group_axis {"axis": "P", "descending": false, "extent": 2, "level": 0, "lower": 0, "upper": 2, "views": {"A": [{"coefficient": 1, "dimension": 0}], "B": [{"coefficient": 1, "dimension": 0}], "C": [{"coefficient": 1, "dimension": 0}]}}
+BATCHED-NEXT: parametric_extents []
+
+# The rows of every group are a scalar argument: M_p, with the argument's scope.
+RUN: %gemm-opt %S/Inputs/grouped.mlir --nest-report --function=grouped_param --scope=3:0:128 %{opts} -o %t.param.json
+RUN: %python %S/Inputs/group_fields.py %t.param.json | FileCheck %s --check-prefix=PARAM
+PARAM: grouped_param nest 0: VERIFIED_NOT_MAPPED
+PARAM-NEXT: group_axis {"axis": "P", {{.*}} "level": 0,
+PARAM-NEXT: parametric_extents [{"affine": true, "axis": "I", "level": 1, "lower": 0, "lower_form": {"constant": 0, "parameters": []}, "symbol": "M_p", "uniform_over_groups": true, "upper": "(param:bv16 0); it reads parameter 0 (argument 3 of the function)", "upper_form": {"constant": 0, "parameters": [{"argument": 3, "coefficient": 1, "parameter": 0, "scope": [0, 128], "source": "argument"}]}}]
+
+# Rows read from memory (offsets[p]..offsets[p+1]): no claim, so no fields.
+RUN: %gemm-opt %S/Inputs/grouped.mlir --nest-report --function=grouped_offsets %{opts} -o %t.offsets.json
+RUN: %python %S/Inputs/group_fields.py %t.offsets.json | FileCheck %s --check-prefix=OFFSETS
+OFFSETS: grouped_offsets nest 0: NOT_VERIFIED no gemm
+
+# A GEMM with no group axis.
+RUN: %gemm-opt %S/Inputs/gemms.mlir --nest-report --function=strict %{opts} -o %t.strict.json
+RUN: %python %S/Inputs/group_fields.py %t.strict.json | FileCheck %s --check-prefix=PLAIN
+PLAIN: group_axis null
+PLAIN-NEXT: parametric_extents []

@@ -599,6 +599,88 @@ NestRecord analyzeNest(const OutlinedNest &nest, const NestAnalysisOptions &opti
         out.dimensions.push_back(std::move(dimension));
       }
     }
+
+    // The group axis and the symbolic extents, read off the levels and the views above.
+    if (perAxis[0] == 1) {
+      for (unsigned l = 0; l < r.levels.size(); ++l) {
+        const NestLevel &level = r.levels[l];
+        if (level.axis != 'P')
+          continue;
+        NestGroupAxis group;
+        group.level = l;
+        group.descending = level.descending;
+        group.lower = level.lower;
+        group.upper = level.upper;
+        group.extent = level.extent;
+        group.lowerText = level.lowerText;
+        group.upperText = level.upperText;
+        for (unsigned view = 0; view < 3; ++view)
+          for (unsigned d = 0; d < r.views[view].dimensions.size(); ++d)
+            for (const auto &[at, coefficient] : r.views[view].dimensions[d].levels)
+              if (at == l)
+                group.views[view].push_back({d, coefficient});
+        r.groupAxis = std::move(group);
+      }
+    }
+    auto boundParameters = [&](Term bound, const std::optional<Affine> &form) {
+      std::vector<NestBoundParameter> out;
+      std::vector<unsigned> ids;
+      parametersOf(bound, ids);
+      for (unsigned id : ids) {
+        NestBoundParameter one;
+        one.parameter = id;
+        if (form)
+          if (auto found = form->parameters.find(id); found != form->parameters.end())
+            one.coefficient = found->second.getSExtValue();
+        one.source = "value";
+        if (id < program.parameters.size()) {
+          const Parameter &parameter = program.parameters[id];
+          if (parameter.kind == Parameter::Dimension) {
+            one.source = "extent";
+          } else {
+            for (const NestScalar &scalar : nest.scalars)
+              if (scalar.outlined == parameter.argument && scalar.source == NestScalar::FunctionArgument) {
+                one.source = "argument";
+                one.argument = scalar.argument;
+                for (const NestScopeEntry &entry : r.scope)
+                  if (entry.argument == scalar.argument) {
+                    one.scopeLower = entry.lower;
+                    one.scopeUpper = entry.upper;
+                  }
+              }
+          }
+        }
+        out.push_back(std::move(one));
+      }
+      return out;
+    };
+    for (unsigned l = 0; l < r.levels.size() && l < order.levels.size(); ++l) {
+      const NestLevel &level = r.levels[l];
+      if (!std::strchr("IJK", level.axis) || (level.lower && level.upper))
+        continue;
+      const GuardedLevel &guarded = order.levels[l];
+      NestParametricExtent extent;
+      extent.level = l;
+      extent.axis = level.axis;
+      extent.symbol = std::string(1, level.axis == 'I' ? 'M' : level.axis == 'J' ? 'N' : 'K') +
+                      (r.groupAxis ? "_p" : "");
+      extent.lower = level.lower;
+      extent.upper = level.upper;
+      extent.lowerText = level.lowerText;
+      extent.upperText = level.upperText;
+      std::optional<Affine> lower = decompose(guarded.lower), upper = decompose(guarded.upper);
+      extent.readsLevels = !lower || !upper || !lower->levels.empty() || !upper->levels.empty();
+      extent.affine = lower && upper && lower->levels.empty() && upper->levels.empty();
+      if (extent.affine) {
+        extent.lowerConstant = lower->constant.getSExtValue();
+        extent.upperConstant = upper->constant.getSExtValue();
+      }
+      // A bound that is no affine form may still read a level: only a form with no level
+      // and no state is uniform. Be conservative where there is no form.
+      extent.lowerParameters = boundParameters(guarded.lower, lower);
+      extent.upperParameters = boundParameters(guarded.upper, upper);
+      r.parametricExtents.push_back(std::move(extent));
+    }
   }
 
   // The claims, as the checkers state them.
@@ -986,6 +1068,57 @@ json::Object toJSON(const NestRecord &r, const std::vector<FunctionRoot> &roots)
         {"frame", json::Object{{"other_writes", (int64_t)r.otherWrites}, {"other_reads", (int64_t)r.otherReads}}},
         {"tiers", json::Object(r.tiers)},
         {"reorder", json::Object(r.reorder)}};
+    // Additive under generalized-gemm-nest/2: read off the levels and views above, no claim
+    // of their own, and the gate reads neither.
+    if (r.groupAxis) {
+      const NestGroupAxis &group = *r.groupAxis;
+      json::Object byView;
+      for (unsigned view = 0; view < 3; ++view) {
+        json::Array dimensions;
+        for (const auto &[dimension, coefficient] : group.views[view])
+          dimensions.push_back(json::Object{{"dimension", (int64_t)dimension}, {"coefficient", coefficient}});
+        byView[names[view]] = std::move(dimensions);
+      }
+      gemm["group_axis"] = json::Object{
+          {"axis", "P"},
+          {"level", (int64_t)group.level},
+          {"descending", group.descending},
+          {"lower", group.lower ? json::Value(*group.lower) : json::Value(group.lowerText)},
+          {"upper", group.upper ? json::Value(*group.upper) : json::Value(group.upperText)},
+          {"extent", group.extent ? json::Value((int64_t)*group.extent) : json::Value(nullptr)},
+          {"views", std::move(byView)}};
+    } else {
+      gemm["group_axis"] = nullptr;
+    }
+    auto parametersJSON = [](const std::vector<NestBoundParameter> &parameters) {
+      json::Array out;
+      for (const NestBoundParameter &one : parameters)
+        out.push_back(json::Object{
+            {"parameter", (int64_t)one.parameter},
+            {"coefficient", one.coefficient},
+            {"source", one.source},
+            {"argument", one.argument ? json::Value((int64_t)*one.argument) : json::Value(nullptr)},
+            {"scope", one.scopeLower ? json::Value(json::Array{*one.scopeLower, *one.scopeUpper})
+                                     : json::Value(nullptr)}});
+      return out;
+    };
+    json::Array extents;
+    for (const NestParametricExtent &extent : r.parametricExtents)
+      extents.push_back(json::Object{
+          {"level", (int64_t)extent.level},
+          {"axis", axisName(extent.axis)},
+          {"symbol", extent.symbol},
+          {"lower", extent.lower ? json::Value(*extent.lower) : json::Value(extent.lowerText)},
+          {"upper", extent.upper ? json::Value(*extent.upper) : json::Value(extent.upperText)},
+          {"affine", extent.affine},
+          {"lower_form", extent.affine ? json::Value(json::Object{{"constant", extent.lowerConstant},
+                                                                  {"parameters", parametersJSON(extent.lowerParameters)}})
+                                       : json::Value(nullptr)},
+          {"upper_form", extent.affine ? json::Value(json::Object{{"constant", extent.upperConstant},
+                                                                  {"parameters", parametersJSON(extent.upperParameters)}})
+                                       : json::Value(nullptr)},
+          {"uniform_over_groups", !extent.readsLevels}});
+    gemm["parametric_extents"] = std::move(extents);
     out["gemm"] = std::move(gemm);
   } else {
     out["gemm"] = nullptr;

@@ -1278,6 +1278,27 @@ to the forbidden list. The test's other commands run the checker on small trees
 (`Inputs/layering`) that each break the rule one way. To forbid something else, or to guard
 another file, add to `RULES` in the script.
 
+### The group axis and parametric extents in the record (2026-11-20, gemm-opt-mlir)
+
+Two additive fields of `gemm` under `generalized-gemm-nest/2`, for a backend that groups
+(`tools/grouped-gemm-triton`, MoE grouped GEMM to Triton). G3a/G3b and the gate are unchanged,
+and the gate reads neither field. Both are read off `levels` and `views` and make no claim
+of their own.
+
+* `group_axis`: the one level of axis P (null when there is none, or more than one): level,
+  direction, bounds, extent, and for each view the dimensions that read it with their
+  coefficient. It says where P is, not that batches are mapped: the refusal "batches are
+  not mapped" stands for systolic-mlir.
+* `parametric_extents`: each level of I, J or K whose bound is not a constant. It gives the
+  symbol (`M`/`N`/`K`, with `_p` when there is a group axis), and for affine bounds the
+  constant plus each parameter: its coefficient, its source (`argument` with the
+  function's argument and `--scope` range, `extent`, or `value`). `uniform_over_groups` is
+  true when neither bound reads a level, which is the case the record's claim covers: one
+  value of the parameter for every group.
+
+Bounds read from memory (`offsets[p]..offsets[p+1]`) give no claim (the trace depends on
+memory contents), so they give no fields. Lit: `test/gemm-opt/group_axis.test`.
+
 ## The thesis
 
 The thesis text of 2026-11-06 (465 pages) makes no claim about merging loops: Definition 4.5

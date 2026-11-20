@@ -1,0 +1,626 @@
+[
+  {
+    "authorizes_lowering": false,
+    "composition": "each record is a claim about its nest from any memory at the nest's entry, so the statements keep their order and no nest is taken to be independent of another",
+    "dependences": [],
+    "dependences_note": "by root, so what may be and not what is: never a reason to call two nests independent",
+    "function": "moe_grouped",
+    "nests": [
+      {
+        "assumptions": [
+          "argument 3 of the function is in [0, 16]: the scope of every claim",
+          "roots 0 and 2 are separate: authorized, not proved, and used by the computation claim",
+          "roots 1 and 2 are separate: authorized, not proved, and used by the computation claim",
+          "the claims are about the runs of the nest that complete: a run may stop on NaN result: payload is not determined",
+          "index values are bit vectors of width 16"
+        ],
+        "authorizes_lowering": false,
+        "binding": {
+          "index_width": 16,
+          "reason": "",
+          "scheme": "generalized-gemm-nest-binding/1",
+          "sha256": "2d87835349c6a00c6b28d0bb818bb8b64cad5d8e7b61bfc8b13f27d0ff6f95d5"
+        },
+        "column": 3,
+        "conditions": 0,
+        "function": "moe_grouped",
+        "gemm": {
+          "accumulation": {
+            "accumulator_first": true,
+            "element": "f32",
+            "fold": "ORDERED_FLOAT",
+            "multiply": "fmul",
+            "order": "the levels, outermost first, each in its direction",
+            "reduction": "fadd",
+            "sites": 1,
+            "sites_agree": true,
+            "starts_from": "the value of the cell at the nest's entry",
+            "statement": "C[h] := C[h] + A[f] * B[g]"
+          },
+          "axes": {
+            "I": [
+              1
+            ],
+            "J": [
+              2
+            ],
+            "K": [
+              3
+            ],
+            "P": [
+              0
+            ]
+          },
+          "box": false,
+          "candidate": 0,
+          "extents": null,
+          "frame": {
+            "other_reads": 0,
+            "other_writes": 0
+          },
+          "group": 0,
+          "group_axis": {
+            "axis": "P",
+            "descending": false,
+            "extent": 4,
+            "level": 0,
+            "lower": 0,
+            "upper": 4,
+            "views": {
+              "A": [
+                {
+                  "coefficient": 1,
+                  "dimension": 0
+                }
+              ],
+              "B": [
+                {
+                  "coefficient": 1,
+                  "dimension": 0
+                }
+              ],
+              "C": [
+                {
+                  "coefficient": 1,
+                  "dimension": 0
+                }
+              ]
+            }
+          },
+          "guard": "true",
+          "levels": [
+            {
+              "axis": "P",
+              "descending": false,
+              "extent": 4,
+              "level": 0,
+              "lower": 0,
+              "signed": false,
+              "upper": 4,
+              "value": "(state:bv16 5)"
+            },
+            {
+              "axis": "I",
+              "descending": false,
+              "extent": null,
+              "level": 1,
+              "lower": 0,
+              "signed": false,
+              "upper": "(param:bv16 0); it reads parameter 0 (argument 3 of the function)",
+              "value": "(state:bv16 6)"
+            },
+            {
+              "axis": "J",
+              "descending": false,
+              "extent": 64,
+              "level": 2,
+              "lower": 0,
+              "signed": false,
+              "upper": 64,
+              "value": "(state:bv16 7)"
+            },
+            {
+              "axis": "K",
+              "descending": false,
+              "extent": 32,
+              "level": 3,
+              "lower": 0,
+              "signed": false,
+              "upper": 32,
+              "value": "(state:bv16 8)"
+            }
+          ],
+          "multiply_flags": [],
+          "parametric_extents": [
+            {
+              "affine": true,
+              "axis": "I",
+              "level": 1,
+              "lower": 0,
+              "lower_form": {
+                "constant": 0,
+                "parameters": []
+              },
+              "symbol": "M_p",
+              "uniform_over_groups": true,
+              "upper": "(param:bv16 0); it reads parameter 0 (argument 3 of the function)",
+              "upper_form": {
+                "constant": 0,
+                "parameters": [
+                  {
+                    "argument": 3,
+                    "coefficient": 1,
+                    "parameter": 0,
+                    "scope": [
+                      0,
+                      16
+                    ],
+                    "source": "argument"
+                  }
+                ]
+              }
+            }
+          ],
+          "reduction_flags": [
+            "reassoc"
+          ],
+          "reorder": {
+            "float": {
+              "detail": "reversing cell 1 of root 2 changes its final bits",
+              "point": [
+                1
+              ],
+              "status": "REFUTED",
+              "tier": "PROPOSED",
+              "witness_memory": true
+            },
+            "integer": {
+              "detail": "not an integer fold",
+              "status": "UNKNOWN",
+              "tier": "PROPOSED",
+              "witness_memory": false
+            },
+            "trivial": {
+              "detail": "a cell has more than one contribution",
+              "point": [
+                1
+              ],
+              "status": "REFUTED",
+              "tier": "PROPOSED",
+              "witness_memory": false
+            }
+          },
+          "tiers": {
+            "computation": {
+              "finite": {
+                "reason": "Herbrand replay equal at each listed point, for all initial memories",
+                "status": "VERIFIED",
+                "tier": "SCOPE_ENUMERATED"
+              },
+              "symbolic": {
+                "reason": "E, OP, R, W and F discharged over the scope",
+                "status": "VERIFIED",
+                "tier": "SYMBOLIC"
+              }
+            },
+            "coordinate": {
+              "finite": "SCOPE_ENUMERATED",
+              "symbolic": "SYMBOLIC_EXACT"
+            },
+            "domain": {
+              "finite": {
+                "exact_order": true,
+                "reason": "each listed point enumerated exactly, in order",
+                "status": "VERIFIED",
+                "tier": "SCOPE_ENUMERATED"
+              },
+              "symbolic": {
+                "exact_order": true,
+                "multiplicity": "UNIT",
+                "reason": "D1 to D3 discharged over the scope",
+                "status": "VERIFIED",
+                "tier": "SYMBOLIC"
+              }
+            },
+            "facts": {
+              "cell_key": {
+                "detail": "K1 over the scope",
+                "status": "PROVEN",
+                "tier": "SYMBOLIC",
+                "witness_memory": false
+              },
+              "output_injective": {
+                "detail": "C1 over the scope",
+                "status": "PROVEN",
+                "tier": "SYMBOLIC",
+                "witness_memory": false
+              },
+              "single_contribution": {
+                "detail": "T1 not discharged",
+                "status": "UNKNOWN",
+                "tier": "PROPOSED",
+                "witness_memory": false
+              }
+            },
+            "termination": "PROVEN_TERMINATING_IF_DEFINED",
+            "theorem13": {
+              "holds_for": "runs that complete",
+              "logical_tier": "SYMBOLIC",
+              "reason": "G4a and Theorem 12 over the scope",
+              "status": "VERIFIED",
+              "tier": "SYMBOLIC"
+            }
+          },
+          "views": {
+            "A": {
+              "affine": true,
+              "dimensions": [
+                {
+                  "affine": true,
+                  "constant": 0,
+                  "form": "level0",
+                  "levels": [
+                    {
+                      "coefficient": 1,
+                      "level": 0
+                    }
+                  ],
+                  "offset": null,
+                  "parameters": [],
+                  "roles": []
+                },
+                {
+                  "affine": true,
+                  "constant": 0,
+                  "form": "level1",
+                  "levels": [
+                    {
+                      "coefficient": 1,
+                      "level": 1
+                    }
+                  ],
+                  "offset": 0,
+                  "parameters": [],
+                  "roles": [
+                    {
+                      "role": "I",
+                      "scale": 1
+                    }
+                  ]
+                },
+                {
+                  "affine": true,
+                  "constant": 0,
+                  "form": "level3",
+                  "levels": [
+                    {
+                      "coefficient": 1,
+                      "level": 3
+                    }
+                  ],
+                  "offset": 0,
+                  "parameters": [],
+                  "roles": [
+                    {
+                      "role": "K",
+                      "scale": 1
+                    }
+                  ]
+                }
+              ],
+              "fact": "PROVEN at SYMBOLIC (over the scope)",
+              "proposed": true,
+              "proved": true,
+              "root": {
+                "argument": 0,
+                "noalias": false,
+                "origin": "argument",
+                "root": 0,
+                "type": "memref<4x16x32xf32>"
+              }
+            },
+            "B": {
+              "affine": true,
+              "dimensions": [
+                {
+                  "affine": true,
+                  "constant": 0,
+                  "form": "level0",
+                  "levels": [
+                    {
+                      "coefficient": 1,
+                      "level": 0
+                    }
+                  ],
+                  "offset": null,
+                  "parameters": [],
+                  "roles": []
+                },
+                {
+                  "affine": true,
+                  "constant": 0,
+                  "form": "level3",
+                  "levels": [
+                    {
+                      "coefficient": 1,
+                      "level": 3
+                    }
+                  ],
+                  "offset": 0,
+                  "parameters": [],
+                  "roles": [
+                    {
+                      "role": "K",
+                      "scale": 1
+                    }
+                  ]
+                },
+                {
+                  "affine": true,
+                  "constant": 0,
+                  "form": "level2",
+                  "levels": [
+                    {
+                      "coefficient": 1,
+                      "level": 2
+                    }
+                  ],
+                  "offset": 0,
+                  "parameters": [],
+                  "roles": [
+                    {
+                      "role": "J",
+                      "scale": 1
+                    }
+                  ]
+                }
+              ],
+              "fact": "PROVEN at SYMBOLIC (over the scope)",
+              "proposed": true,
+              "proved": true,
+              "root": {
+                "argument": 1,
+                "noalias": false,
+                "origin": "argument",
+                "root": 1,
+                "type": "memref<4x32x64xf32>"
+              }
+            },
+            "C": {
+              "affine": true,
+              "dimensions": [
+                {
+                  "affine": true,
+                  "constant": 0,
+                  "form": "level0",
+                  "levels": [
+                    {
+                      "coefficient": 1,
+                      "level": 0
+                    }
+                  ],
+                  "offset": null,
+                  "parameters": [],
+                  "roles": []
+                },
+                {
+                  "affine": true,
+                  "constant": 0,
+                  "form": "level1",
+                  "levels": [
+                    {
+                      "coefficient": 1,
+                      "level": 1
+                    }
+                  ],
+                  "offset": 0,
+                  "parameters": [],
+                  "roles": [
+                    {
+                      "role": "I",
+                      "scale": 1
+                    }
+                  ]
+                },
+                {
+                  "affine": true,
+                  "constant": 0,
+                  "form": "level2",
+                  "levels": [
+                    {
+                      "coefficient": 1,
+                      "level": 2
+                    }
+                  ],
+                  "offset": 0,
+                  "parameters": [],
+                  "roles": [
+                    {
+                      "role": "J",
+                      "scale": 1
+                    }
+                  ]
+                }
+              ],
+              "fact": "PROVEN at SYMBOLIC (over the scope)",
+              "proposed": true,
+              "proved": true,
+              "root": {
+                "argument": 2,
+                "noalias": false,
+                "origin": "argument",
+                "root": 2,
+                "type": "memref<4x16x64xf32>"
+              }
+            }
+          }
+        },
+        "line": 13,
+        "location": "moe_grouped_wide.mlir:13:3",
+        "loop": "scf.for",
+        "model": {
+          "candidates": 1,
+          "gate": "OPEN",
+          "gate_reason": "",
+          "groups": 1,
+          "reason": "",
+          "sites": 1,
+          "status": "SUPPORTED",
+          "termination": "PROVEN_TERMINATING_IF_DEFINED"
+        },
+        "nest": 0,
+        "ordered_fold": {
+          "reason": "Theorem 13 is VERIFIED at SYMBOLIC (G4a and Theorem 12 over the scope), for the runs that complete, and the frame of the computation claim has no write",
+          "verified": true
+        },
+        "ordered_fold_verified": true,
+        "outline": {
+          "constants_copied": 5,
+          "entry_memory": "any: what ran before the nest is not assumed",
+          "function": "moe_grouped__nest0",
+          "reason": "",
+          "roots": [
+            {
+              "access": [
+                "read"
+              ],
+              "argument": 0,
+              "as": 0,
+              "noalias": false,
+              "origin": "argument",
+              "root": 0,
+              "type": "memref<4x16x32xf32>"
+            },
+            {
+              "access": [
+                "read"
+              ],
+              "argument": 1,
+              "as": 1,
+              "noalias": false,
+              "origin": "argument",
+              "root": 1,
+              "type": "memref<4x32x64xf32>"
+            },
+            {
+              "access": [
+                "read",
+                "write"
+              ],
+              "argument": 2,
+              "as": 2,
+              "noalias": false,
+              "origin": "argument",
+              "root": 2,
+              "type": "memref<4x16x64xf32>"
+            }
+          ],
+          "scalars": [
+            {
+              "argument": 3,
+              "as": 3,
+              "definition": "argument 3",
+              "source": "argument",
+              "type": "index"
+            }
+          ],
+          "status": "OUTLINED"
+        },
+        "reassociation": {
+          "basis": "source flag",
+          "detail": "every accumulation of the nest carries reassoc: the programmer's permission, and no proof that another order gives the same bits (the float reorder fact is REFUTED)",
+          "permitted": true,
+          "source_flag_reassoc": true
+        },
+        "reassociation_permitted": true,
+        "refusals": [
+          "the family has a batch coordinate (axis P), and batches are not mapped",
+          "no constant extent: the upper bound of level 1 (axis I) is (param:bv16 0); it reads parameter 0 (argument 3 of the function)",
+          "dimension 0 of the view of C reads level 0 (axis P), which is no role of C",
+          "dimension 0 of the view of A reads level 0 (axis P), which is no role of A",
+          "dimension 0 of the view of B reads level 0 (axis P), which is no role of B"
+        ],
+        "scope": [
+          {
+            "argument": 3,
+            "lower": 0,
+            "upper": 16
+          }
+        ],
+        "separation": [
+          {
+            "apart": false,
+            "basis": "none: the two may overlap",
+            "kind": "unknown",
+            "name": "roots 0 and 1 are separate",
+            "roots": [
+              0,
+              1
+            ],
+            "used": false
+          },
+          {
+            "apart": true,
+            "basis": "authorized",
+            "kind": "assumption",
+            "name": "roots 0 and 2 are separate",
+            "roots": [
+              0,
+              2
+            ],
+            "used": true
+          },
+          {
+            "apart": true,
+            "basis": "authorized",
+            "kind": "assumption",
+            "name": "roots 1 and 2 are separate",
+            "roots": [
+              1,
+              2
+            ],
+            "used": true
+          }
+        ],
+        "statement": 5,
+        "status": "VERIFIED_NOT_MAPPED"
+      }
+    ],
+    "order": [
+      {
+        "conditions": 0,
+        "kind": "nest",
+        "location": "moe_grouped_wide.mlir:13:3",
+        "nest": 0,
+        "operation": "scf.for",
+        "statement": 5
+      }
+    ],
+    "reason": "",
+    "roots": [
+      {
+        "argument": 0,
+        "noalias": false,
+        "origin": "argument",
+        "root": 0,
+        "type": "memref<4x16x32xf32>"
+      },
+      {
+        "argument": 1,
+        "noalias": false,
+        "origin": "argument",
+        "root": 1,
+        "type": "memref<4x32x64xf32>"
+      },
+      {
+        "argument": 2,
+        "noalias": false,
+        "origin": "argument",
+        "root": 2,
+        "type": "memref<4x16x64xf32>"
+      }
+    ],
+    "schema": "generalized-gemm-nest/2",
+    "status": "OUTLINED"
+  }
+]

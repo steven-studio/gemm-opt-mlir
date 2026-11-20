@@ -110,6 +110,47 @@ struct NestView {
   std::vector<NestViewDimension> dimensions;
 };
 
+/// The group axis of the candidate: its one level of axis P, read off `levels` and the
+/// views, and nothing more. It states where P is, not that a group may be lowered: a
+/// family with a P coordinate is still refused by mappingRefusals ("batches are not
+/// mapped"). Unset when no level is a coordinate of P, or when two are.
+struct NestGroupAxis {
+  unsigned level = 0;
+  bool descending = false;
+  std::optional<int64_t> lower, upper; // Set when the bound is a constant.
+  std::optional<uint64_t> extent;      // Set when both are.
+  std::string lowerText, upperText;
+  /// Per view (C, A, B): each dimension whose affine form reads the P level, with the
+  /// coefficient of that level in it.
+  std::array<std::vector<std::pair<unsigned, int64_t>>, 3> views;
+};
+
+/// A parameter a bound of a level reads, said in the function's terms.
+struct NestBoundParameter {
+  unsigned parameter = 0;       // The copy's parameter id.
+  int64_t coefficient = 0;      // In the bound's affine form; 0 when it has none.
+  std::string source;           // "argument", "extent" or "value" (computed before the nest).
+  std::optional<unsigned> argument;            // The function's argument, for "argument".
+  std::optional<int64_t> scopeLower, scopeUpper; // Its range in the record's scope, if given.
+};
+
+/// A level of axis I, J or K whose bound is no constant: the extent of that axis is a
+/// symbol of the record. The bounds are the order's own, as the checkers took them over
+/// the scope: no new fact. The symbol is uniform over the group axis exactly when the
+/// bound reads no level value (only parameters and constants), which is the case the
+/// record's claim covers: one value of each parameter for every group.
+struct NestParametricExtent {
+  unsigned level = 0;
+  char axis = '?';
+  std::string symbol; // "M", "N" or "K"; "M_p", "N_p" or "K_p" when there is a group axis.
+  std::optional<int64_t> lower, upper;   // Set when the bound is a constant.
+  std::string lowerText, upperText;
+  bool affine = false;                   // Both bounds are affine in parameters only.
+  int64_t lowerConstant = 0, upperConstant = 0; // Their constants, when affine.
+  std::vector<NestBoundParameter> lowerParameters, upperParameters;
+  bool readsLevels = false; // A bound reads a level value: no uniform symbol.
+};
+
 struct NestRecord {
   enum Status {
     Unsupported,       // No copy of the nest, or the importer refuses the copy.
@@ -143,6 +184,9 @@ struct NestRecord {
   bool box = false;  // One level each for I, J and K, no other level, no guard.
   std::optional<std::array<uint64_t, 3>> extents; // M, N, K: set when the box is constant.
   std::array<NestView, 3> views;                  // C, A, B.
+  // Read off the levels and the views above, for a backend that groups: no new claim.
+  std::optional<NestGroupAxis> groupAxis;
+  std::vector<NestParametricExtent> parametricExtents;
 
   // The update.
   std::string element, reduction, multiply, fold;
