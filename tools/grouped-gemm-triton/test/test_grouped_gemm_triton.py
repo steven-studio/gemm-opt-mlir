@@ -9,8 +9,10 @@ on moe_grouped.mlir). The test generates the module, imports it, and checks:
      as in moe_grouped.mlir) against a float64 evaluation of the source loop nest;
   2. the same layout with a different M_p per group, one in each bucket;
   3. an MoE layer: top-k routing, sorted_token_ids gather, compact output, empty expert;
-  4. the dispatcher's refusals (count outside the scope, overlapping rows);
-  5. the generator's refusals on altered records (no group axis, no reordering, ...).
+  4. the dispatcher's refusals (count outside the scope, overlapping rows, an id outside X,
+     C overlapping X / W / sorted_token_ids) and that padding ids outside every group pass;
+  5. the generator's refusals on altered records (no group axis, no reordering, ...);
+  6. --fixed-block-m 16/64/128: one kernel each, correct on the per-group cases.
 """
 
 import copy
@@ -210,6 +212,70 @@ def main():
     expect_raise("dispatcher refuses overlapping rows of C",
                  lambda: mod.grouped_gemm(x, w, c, ids, t32([0, 5, 100, 200]), t32([10, 10, 10, 10])),
                  "same rows")
+
+    # 4b. Run-time guards for what the record assumes or does not model: ids inside X,
+    #     C disjoint from every buffer the kernels read. Padding ids outside every group
+    #     are not read and must be accepted.
+    xs = torch.randn(16, mod.K, device=dev)
+    c16 = torch.zeros(16, mod.N, device=dev)
+    offs4, rows4 = t32([0, 4, 8, 12]), t32([4, 4, 4, 4])
+    bad = torch.arange(16, dtype=torch.int32, device=dev)
+    bad[3] = 10 ** 6
+    expect_raise("dispatcher refuses an id past the rows of X",
+                 lambda: mod.grouped_gemm(xs, w, c16, bad, offs4, rows4), "sorted_token_ids reads row")
+    neg = torch.arange(16, dtype=torch.int32, device=dev)
+    neg[0] = -5
+    expect_raise("dispatcher refuses a negative id",
+                 lambda: mod.grouped_gemm(xs, w, c16, neg, offs4, rows4), "sorted_token_ids reads row")
+    buf = torch.randn(64, max(mod.K, mod.N), device=dev)
+    expect_raise("dispatcher refuses X overlapping C",
+                 lambda: mod.grouped_gemm(buf[:, :mod.K], w, buf[:, :mod.N],
+                                          torch.arange(64, dtype=torch.int32, device=dev),
+                                          t32([0, 8, 16, 24]), t32([8, 8, 8, 8])), "C overlaps X")
+    cw = torch.randn(mod.E * mod.K * mod.N, device=dev)
+    expect_raise("dispatcher refuses W overlapping C",
+                 lambda: mod.grouped_gemm(xs, cw.view(mod.E, mod.K, mod.N), cw.view(-1, mod.N),
+                                          torch.arange(16, dtype=torch.int32, device=dev), offs4,
+                                          t32([1, 1, 1, 1])), "C overlaps W")
+    raw = torch.zeros(16 * mod.N, dtype=torch.float32, device=dev)
+    expect_raise("dispatcher refuses sorted_token_ids overlapping C",
+                 lambda: mod.grouped_gemm(xs, w, raw.view(16, mod.N), raw[:16].view(torch.int32),
+                                          offs4, rows4), "C overlaps sorted_token_ids")
+    pad = torch.arange(20, dtype=torch.int32, device=dev) % 16
+    pad[[4, 5, 6, 7]] = 10 ** 6  # padding between groups: not read
+    cpad0 = torch.randn(20, mod.N, device=dev)
+    cpad = cpad0.clone()
+    offs_p, rows_p = [0, 8, 12, 16], [4, 4, 4, 4]
+    try:
+        mod.grouped_gemm(xs, w, cpad, pad, t32(offs_p), t32(rows_p))
+        torch.cuda.synchronize()
+        ref = cpad0.double().clone()
+        for p, (o, m) in enumerate(zip(offs_p, rows_p)):
+            ref[o:o + m] += xs[pad[o:o + m].long()].double() @ w[p].double()
+        check("dispatcher accepts out-of-range padding ids outside every group",
+              torch.allclose(cpad.double(), ref, atol=ATOL, rtol=RTOL))
+    except ValueError as e:
+        check("dispatcher accepts out-of-range padding ids outside every group", False, str(e))
+
+    # 6. --fixed-block-m: one native kernel over the whole scope.
+    for bm in (16, 64, 128):
+        path = os.path.join(outdir, f"moe_grouped_fixed{bm}.py")
+        rc = gen.main([record_path, "-o", path, "--fixed-block-m", str(bm)])
+        fm = load_module(path) if rc == 0 else None
+        ok = (fm is not None and len(fm.BUCKETS) == 1 and fm.BUCKETS[0][3] == bm
+              and open(path).read().count("@triton.jit") == 1
+              and (fm.BUCKETS[0][1], fm.BUCKETS[0][2]) == (max(lo, 1), hi))
+        check(f"--fixed-block-m {bm}: one kernel over [{max(lo, 1)}, {hi}]", ok,
+              f"{fm.BUCKETS if fm else rc}")
+        if fm is not None:
+            padded_case(fm, (per_group * E)[:E], f"--fixed-block-m {bm}, per-group M_p at the bucket edges")
+            padded_case(fm, mixed, f"--fixed-block-m {bm}, per-group M_p with an empty group")
+    expect_refusal_cli = lambda argv: gen.main(argv)
+    try:
+        expect_refusal_cli([record_path, "-o", os.devnull, "--fixed-block-m", "24"])
+        check("--fixed-block-m 24 refused", False, "accepted")
+    except SystemExit as e:
+        check("--fixed-block-m 24 refused", e.code == 2, f"exit {e.code}")
 
     # 5. Generator refusals.
     def altered(fn):

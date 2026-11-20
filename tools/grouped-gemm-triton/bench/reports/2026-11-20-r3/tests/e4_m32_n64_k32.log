@@ -1,0 +1,48 @@
+usage: test_grouped_gemm_triton.py [-h] -o OUTPUT [--function FUNCTION]
+                                   [--nest NEST] [--thresholds THRESHOLDS |
+                                   --fixed-block-m {16,32,64,128,256}]
+                                   record
+test_grouped_gemm_triton.py: error: argument --fixed-block-m: invalid choice: '24' (choose from 16, 32, 64, 128, 256)
+/home/steven-studio/work/gemm-opt-mlir-validation/grouped-gemm-triton/cp-triton-20261120-r3/final_tests/e4_m32_n64_k32/moe_grouped_kernels.py: 2 kernels for moe_grouped nest 0: M_p in [1,16] BLOCK_M=16, M_p in [17,32] BLOCK_M=32
+PASS: generator accepts the record
+PASS: one @triton.jit kernel per bucket - 2 buckets: [(1, 16, 16), (17, 32, 32)]
+PASS: record layout, uniform M = 0: rows [0, 0, 0, 0] - max |err| 0.00e+00, rows past M_p untouched: True
+PASS: record layout, uniform M = 1: rows [1, 1, 1, 1] - max |err| 1.84e-06, rows past M_p untouched: True
+PASS: record layout, uniform M = 16: rows [16, 16, 16, 16] - max |err| 4.81e-06, rows past M_p untouched: True
+PASS: record layout, uniform M = 17: rows [17, 17, 17, 17] - max |err| 6.74e-06, rows past M_p untouched: True
+PASS: record layout, uniform M = 32: rows [32, 32, 32, 32] - max |err| 5.86e-06, rows past M_p untouched: True
+PASS: record layout, per-group M_p at the bucket edges: rows [16, 32, 1, 17] - max |err| 4.73e-06, rows past M_p untouched: True
+PASS: record layout, per-group M_p with an empty group: rows [8, 24, 0, 0] - max |err| 5.68e-06, rows past M_p untouched: True
+PASS: worklist: each group in its bucket only, ceil(M_p/BLOCK_M) items each - items per bucket [1, 1], groups [8, 24, 0, 0]
+PASS: MoE top-2 gather: counts [10, 32, 32, 32] - max |err| 5.41e-06; combined vs per-token 4.93e-06
+PASS: MoE top-2 gather, empty expert: counts [5, 31, 32, 0] - max |err| 6.03e-06; combined vs per-token 5.90e-06
+PASS: dispatcher refuses M_p above the scope - group 0 has 33 rows, outside the record's scope (0, 32)
+PASS: dispatcher refuses overlapping rows of C - two groups write the same rows of C
+PASS: dispatcher refuses an id past the rows of X - sorted_token_ids reads row 1000000 of X, which has 16 rows
+PASS: dispatcher refuses a negative id - sorted_token_ids reads row -5 of X, which has 16 rows
+PASS: dispatcher refuses X overlapping C - C overlaps X in memory: bytes [0x7c53a8c26800, 0x7c53a8c2a800) and [0x7c53a8c26800, 0x7c53a8c2a780)
+PASS: dispatcher refuses W overlapping C - C overlaps W in memory: bytes [0x7c53a8c2a800, 0x7c53a8c32800) and [0x7c53a8c2a800, 0x7c53a8c32800)
+PASS: dispatcher refuses sorted_token_ids overlapping C - C overlaps sorted_token_ids in memory: bytes [0x7c53a8c32800, 0x7c53a8c33800) and [0x7c53a8c32800, 0x7c53a8c32840)
+PASS: dispatcher accepts out-of-range padding ids outside every group
+/home/steven-studio/work/gemm-opt-mlir-validation/grouped-gemm-triton/cp-triton-20261120-r3/final_tests/e4_m32_n64_k32/moe_grouped_fixed16.py: 1 kernels for moe_grouped nest 0: M_p in [1,32] BLOCK_M=16
+PASS: --fixed-block-m 16: one kernel over [1, 32] - [('m1_32_bm16', 1, 32, 16, 64, 32, 4)]
+PASS: --fixed-block-m 16, per-group M_p at the bucket edges: rows [16, 32, 1, 17] - max |err| 5.57e-06, rows past M_p untouched: True
+PASS: --fixed-block-m 16, per-group M_p with an empty group: rows [8, 24, 0, 0] - max |err| 3.42e-06, rows past M_p untouched: True
+/home/steven-studio/work/gemm-opt-mlir-validation/grouped-gemm-triton/cp-triton-20261120-r3/final_tests/e4_m32_n64_k32/moe_grouped_fixed64.py: 1 kernels for moe_grouped nest 0: M_p in [1,32] BLOCK_M=64
+PASS: --fixed-block-m 64: one kernel over [1, 32] - [('m1_32_bm64', 1, 32, 64, 64, 32, 4)]
+PASS: --fixed-block-m 64, per-group M_p at the bucket edges: rows [16, 32, 1, 17] - max |err| 4.93e-06, rows past M_p untouched: True
+PASS: --fixed-block-m 64, per-group M_p with an empty group: rows [8, 24, 0, 0] - max |err| 3.16e-06, rows past M_p untouched: True
+/home/steven-studio/work/gemm-opt-mlir-validation/grouped-gemm-triton/cp-triton-20261120-r3/final_tests/e4_m32_n64_k32/moe_grouped_fixed128.py: 1 kernels for moe_grouped nest 0: M_p in [1,32] BLOCK_M=128
+PASS: --fixed-block-m 128: one kernel over [1, 32] - [('m1_32_bm128', 1, 32, 128, 64, 32, 8)]
+PASS: --fixed-block-m 128, per-group M_p at the bucket edges: rows [16, 32, 1, 17] - max |err| 4.83e-06, rows past M_p untouched: True
+PASS: --fixed-block-m 128, per-group M_p with an empty group: rows [8, 24, 0, 0] - max |err| 3.62e-06, rows past M_p untouched: True
+PASS: --fixed-block-m 24 refused - exit 2
+PASS: no group axis - no group axis (axis P) in the record
+PASS: fold may not be reordered - the fold may not be reordered, and tl.dot reorders it
+PASS: not verified - nest status UNSUPPORTED: only a verified record is lowered
+PASS: row count not uniform over groups - the row count is not an affine symbol that is uniform over the groups
+PASS: row count unscoped - the row count is not one scoped argument of the function
+PASS: P read by a second dimension of A - dimension 1 of the view of A is 'level1', not level1 alone
+
+0 failure(s)
+generated module: /home/steven-studio/work/gemm-opt-mlir-validation/grouped-gemm-triton/cp-triton-20261120-r3/final_tests/e4_m32_n64_k32/moe_grouped_kernels.py
