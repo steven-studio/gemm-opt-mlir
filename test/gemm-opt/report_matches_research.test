@@ -1,0 +1,8 @@
+# gemm-opt --nest-report is the research driver's report (generalized-gemm-nest-report), byte
+# for byte, at the same index width and limits: the tool adds nothing to the analysis.
+RUN: %gemm-opt %S/Inputs/gemms.mlir --nest-report --function=strict "--authorize=roots 0 and 2 are separate,roots 1 and 2 are separate" --max-level=1 --candidates-per-group=1 --timeout-ms=120000 --rlimit=20000000 -o %t.gemm-opt
+RUN: %nestreport %S/Inputs/gemms.mlir --index-bit-width=64 --function=strict "--authorize=roots 0 and 2 are separate,roots 1 and 2 are separate" --max-level=1 --candidates-per-group=1 --timeout-ms=120000 --rlimit=20000000 > %t.research
+RUN: diff %t.gemm-opt %t.research
+RUN: FileCheck %s < %t.gemm-opt
+CHECK: "function": "strict"
+CHECK: "schema": "generalized-gemm-nest/2"

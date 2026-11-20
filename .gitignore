@@ -1,0 +1,19 @@
+# Build trees
+build/
+build-*/
+compile_commands.json
+
+# Editors
+.vscode/
+.idea/
+*.swp
+
+# Python
+**/__pycache__/
+*.pyc
+
+# Scratch
+*.bak
+*.orig
+*.rej
+%t.*

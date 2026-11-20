@@ -1,0 +1,4 @@
+# gemm-opt-mlir is the recognizer and middle end only: no source, CMake file or link line of
+# this project names the Systolic dialect, its operations, its libraries or its headers.
+RUN: %python %S/Inputs/check_no_backend.py %src_root %obj_root | FileCheck %s
+CHECK: no backend dependency: {{[0-9]+}} files and the build's link lines scanned

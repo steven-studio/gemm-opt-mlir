@@ -1,0 +1,15 @@
+# One mode at a time.
+RUN: not %gemm-opt %S/Inputs/gemms.mlir --nest-records --nest-report 2>&1 | FileCheck %s --check-prefix=MODES
+MODES: gemm-opt: give one of --nest-records, --nest-report, --outline-only and --check-nest-records
+
+# A file that is no records file is an error, not a refusal.
+RUN: not %gemm-opt %S/Inputs/gemms.mlir --check-nest-records=%t.missing.json 2>&1 | FileCheck %s --check-prefix=MISSING
+MISSING: gemm-opt: --check-nest-records:
+RUN: echo '{"schema": 1}' > %t.bad.json
+RUN: not %gemm-opt %S/Inputs/gemms.mlir --check-nest-records=%t.bad.json 2>&1 | FileCheck %s --check-prefix=BAD
+BAD: gemm-opt: --check-nest-records:
+
+# An input that does not parse.
+RUN: echo 'func.func @f( {' > %t.broken.mlir
+RUN: not %gemm-opt %t.broken.mlir 2>&1 | FileCheck %s --check-prefix=PARSE
+PARSE: error:
