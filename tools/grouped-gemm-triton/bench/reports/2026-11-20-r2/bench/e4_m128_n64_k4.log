@@ -1,0 +1,51 @@
+/home/steven-studio/work/gemm-opt-mlir-validation/grouped-gemm-triton/cp-triton-20261120-r2/bench/e4_m128_n64_k4/kernels_multi.py: 3 kernels for moe_grouped nest 0: M_p in [1,16] BLOCK_M=16, M_p in [17,64] BLOCK_M=64, M_p in [65,128] BLOCK_M=128
+/home/steven-studio/work/gemm-opt-mlir-validation/grouped-gemm-triton/cp-triton-20261120-r2/bench/e4_m128_n64_k4/kernels_fixed_native.py: 1 kernels for moe_grouped nest 0: M_p in [1,128] BLOCK_M=128
+mixed_8_40_100_0       multi       ok=True err=8.3e-07 launches=[(16, 1), (64, 1), (128, 1)] kernel(evt) med=72.3us kernel(prof) 11.1us e2e med=282.4us
+mixed_8_40_100_0       fixed128    ok=True err=8.3e-07 launches=[(128, 3)] kernel(evt) med=40.1us kernel(prof) 5.3us e2e med=132.6us
+mixed_8_40_100_0       split3_128  ok=True err=8.3e-07 launches=[(128, 1), (128, 1), (128, 1)] kernel(evt) med=84.3us kernel(prof) 14.9us e2e med=279.4us
+mixed_8_40_100_0       fixed16     ok=True err=8.3e-07 launches=[(16, 11)] kernel(evt) med=39.7us kernel(prof) 2.1us e2e med=131.8us
+mixed_8_40_100_0       fixed64     ok=True err=8.3e-07 launches=[(64, 4)] kernel(evt) med=39.5us kernel(prof) 3.9us e2e med=129.1us
+mixed_1_17_65_128      multi       ok=True err=8.0e-07 launches=[(16, 1), (64, 1), (128, 2)] kernel(evt) med=83.9us kernel(prof) 11.1us e2e med=281.2us
+mixed_1_17_65_128      fixed128    ok=True err=8.0e-07 launches=[(128, 4)] kernel(evt) med=40.0us kernel(prof) 5.8us e2e med=129.9us
+mixed_1_17_65_128      split3_128  ok=True err=8.0e-07 launches=[(128, 1), (128, 1), (128, 2)] kernel(evt) med=84.2us kernel(prof) 15.0us e2e med=302.1us
+mixed_1_17_65_128      fixed16     ok=True err=8.0e-07 launches=[(16, 16)] kernel(evt) med=40.1us kernel(prof) 2.1us e2e med=132.3us
+mixed_1_17_65_128      fixed64     ok=True err=8.0e-07 launches=[(64, 6)] kernel(evt) med=39.8us kernel(prof) 3.9us e2e med=130.3us
+edges_16_17_64_65      multi       ok=True err=7.9e-07 launches=[(16, 1), (64, 2), (128, 1)] kernel(evt) med=85.1us kernel(prof) 11.0us e2e med=281.3us
+edges_16_17_64_65      fixed128    ok=True err=7.9e-07 launches=[(128, 4)] kernel(evt) med=39.9us kernel(prof) 5.1us e2e med=130.0us
+edges_16_17_64_65      split3_128  ok=True err=7.9e-07 launches=[(128, 1), (128, 2), (128, 1)] kernel(evt) med=84.1us kernel(prof) 14.8us e2e med=279.7us
+edges_16_17_64_65      fixed16     ok=True err=7.9e-07 launches=[(16, 12)] kernel(evt) med=39.7us kernel(prof) 2.1us e2e med=132.9us
+edges_16_17_64_65      fixed64     ok=True err=7.9e-07 launches=[(64, 5)] kernel(evt) med=39.8us kernel(prof) 3.9us e2e med=129.8us
+skew_1_1_1_128         multi       ok=True err=9.2e-07 launches=[(16, 3), (128, 1)] kernel(evt) med=63.1us kernel(prof) 7.7us e2e med=207.3us
+skew_1_1_1_128         fixed128    ok=True err=9.2e-07 launches=[(128, 4)] kernel(evt) med=39.8us kernel(prof) 5.8us e2e med=129.6us
+skew_1_1_1_128         split3_128  ok=True err=9.2e-07 launches=[(128, 3), (128, 1)] kernel(evt) med=62.7us kernel(prof) 10.3us e2e med=207.2us
+skew_1_1_1_128         fixed16     ok=True err=9.2e-07 launches=[(16, 11)] kernel(evt) med=39.9us kernel(prof) 2.1us e2e med=132.4us
+skew_1_1_1_128         fixed64     ok=True err=9.2e-07 launches=[(64, 5)] kernel(evt) med=39.8us kernel(prof) 3.9us e2e med=130.2us
+all_small_8            multi       ok=True err=5.2e-07 launches=[(16, 4)] kernel(evt) med=40.0us kernel(prof) 2.0us e2e med=130.7us
+all_small_8            fixed128    ok=True err=5.2e-07 launches=[(128, 4)] kernel(evt) med=40.0us kernel(prof) 4.7us e2e med=129.7us
+all_small_8            split3_128  ok=True err=5.2e-07 launches=[(128, 4)] kernel(evt) med=40.1us kernel(prof) 4.7us e2e med=131.1us
+all_small_8            fixed16     ok=True err=5.2e-07 launches=[(16, 4)] kernel(evt) med=40.0us kernel(prof) 2.0us e2e med=130.1us
+all_small_8            fixed64     ok=True err=5.2e-07 launches=[(64, 4)] kernel(evt) med=40.2us kernel(prof) 3.3us e2e med=129.6us
+all_16                 multi       ok=True err=8.3e-07 launches=[(16, 4)] kernel(evt) med=39.7us kernel(prof) 2.0us e2e med=130.6us
+all_16                 fixed128    ok=True err=8.3e-07 launches=[(128, 4)] kernel(evt) med=39.8us kernel(prof) 4.7us e2e med=130.5us
+all_16                 split3_128  ok=True err=8.3e-07 launches=[(128, 4)] kernel(evt) med=39.9us kernel(prof) 4.7us e2e med=131.1us
+all_16                 fixed16     ok=True err=8.3e-07 launches=[(16, 4)] kernel(evt) med=39.9us kernel(prof) 2.0us e2e med=131.6us
+all_16                 fixed64     ok=True err=8.3e-07 launches=[(64, 4)] kernel(evt) med=39.9us kernel(prof) 3.4us e2e med=129.5us
+all_64                 multi       ok=True err=9.1e-07 launches=[(64, 4)] kernel(evt) med=39.9us kernel(prof) 4.0us e2e med=130.6us
+all_64                 fixed128    ok=True err=9.1e-07 launches=[(128, 4)] kernel(evt) med=39.6us kernel(prof) 5.1us e2e med=129.8us
+all_64                 split3_128  ok=True err=9.1e-07 launches=[(128, 4)] kernel(evt) med=39.9us kernel(prof) 5.0us e2e med=141.7us
+all_64                 fixed16     ok=True err=9.1e-07 launches=[(16, 16)] kernel(evt) med=39.5us kernel(prof) 2.1us e2e med=132.0us
+all_64                 fixed64     ok=True err=9.1e-07 launches=[(64, 4)] kernel(evt) med=39.6us kernel(prof) 4.0us e2e med=129.4us
+all_max                multi       ok=True err=1.2e-06 launches=[(128, 4)] kernel(evt) med=39.8us kernel(prof) 5.7us e2e med=132.0us
+all_max                fixed128    ok=True err=1.2e-06 launches=[(128, 4)] kernel(evt) med=39.7us kernel(prof) 5.8us e2e med=131.0us
+all_max                split3_128  ok=True err=1.2e-06 launches=[(128, 4)] kernel(evt) med=39.9us kernel(prof) 5.8us e2e med=131.6us
+all_max                fixed16     ok=True err=1.2e-06 launches=[(16, 32)] kernel(evt) med=39.7us kernel(prof) 2.3us e2e med=135.6us
+all_max                fixed64     ok=True err=1.2e-06 launches=[(64, 8)] kernel(evt) med=39.8us kernel(prof) 4.0us e2e med=131.6us
+mixed_8_40_100_0: split3_128 work items == fixed128: True
+mixed_1_17_65_128: split3_128 work items == fixed128: True
+edges_16_17_64_65: split3_128 work items == fixed128: True
+skew_1_1_1_128: split3_128 work items == fixed128: True
+all_small_8: split3_128 work items == fixed128: True
+all_16: split3_128 work items == fixed128: True
+all_64: split3_128 work items == fixed128: True
+all_max: split3_128 work items == fixed128: True
+raw: /home/steven-studio/work/gemm-opt-mlir-validation/grouped-gemm-triton/cp-triton-20261120-r2/bench/e4_m128_n64_k4/bench.json

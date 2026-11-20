@@ -1,0 +1,18 @@
+kernels.py: 3 kernels for moe_grouped nest 0: M_p in [1,16] BLOCK_M=16, M_p in [17,64] BLOCK_M=64, M_p in [65,128] BLOCK_M=128
+X aliases C -> accepted (no error)
+W aliases C -> accepted (no error)
+ids out of range of X -> raised RuntimeError: Triton Error [CUDA]: an illegal memory access was encountered
+Traceback (most recent call last):
+  File "/home/steven-studio/work/gemm-opt-mlir-validation/grouped-gemm-triton/cp-triton-20261120-r2/conditions/probe_conditions.py", line 31, in <module>
+    ids2 = torch.zeros(16, dtype=torch.int32, device=dev); ids2[0] = -5
+torch.AcceleratorError: CUDA error: an illegal memory access was encountered
+Search for `cudaErrorIllegalAddress' in https://docs.nvidia.com/cuda/cuda-runtime-api/group__CUDART__TYPES.html for more information.
+Compile with `TORCH_USE_CUDA_DSA` to enable device-side assertions.
+
+Traceback (most recent call last):
+  File "<stdin>", line 5, in <module>
+FileNotFoundError: [Errno 2] No such file or directory: 'probe_results.json'
+m1_16 {'fma.rn.f32': 32, 'mul.f32': 0, 'add.f32': 0, 'mma': 0}
+m17_64 {'fma.rn.f32': 128, 'mul.f32': 0, 'add.f32': 0, 'mma': 0}
+m65_128 {'fma.rn.f32': 128, 'mul.f32': 0, 'add.f32': 0, 'mma': 0}
+negative id -> accepted (no error, no fault)

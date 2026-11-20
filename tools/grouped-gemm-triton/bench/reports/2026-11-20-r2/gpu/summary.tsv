@@ -1,0 +1,7 @@
+e4_m128_n16_k4	gen+mixed rc=0 60/60 pass	repo-test rc=0 0 failure(s)	buckets=M_p in [1,16] BLOCK_M=16, M_p in [17,64] BLOCK_M=64, M_p in [65,128] BLOCK_M=128
+e4_m128_n8_k8	gen+mixed rc=0 60/60 pass	repo-test rc=0 0 failure(s)	buckets=M_p in [1,16] BLOCK_M=16, M_p in [17,64] BLOCK_M=64, M_p in [65,128] BLOCK_M=128
+e4_m128_n32_k4	gen+mixed rc=0 60/60 pass	repo-test rc=0 0 failure(s)	buckets=M_p in [1,16] BLOCK_M=16, M_p in [17,64] BLOCK_M=64, M_p in [65,128] BLOCK_M=128
+e4_m128_n8_k16	gen+mixed rc=0 60/60 pass	repo-test rc=0 0 failure(s)	buckets=M_p in [1,16] BLOCK_M=16, M_p in [17,64] BLOCK_M=64, M_p in [65,128] BLOCK_M=128
+e4_m128_n64_k4	gen+mixed rc=0 60/60 pass	repo-test rc=0 0 failure(s)	buckets=M_p in [1,16] BLOCK_M=16, M_p in [17,64] BLOCK_M=64, M_p in [65,128] BLOCK_M=128
+e4_m128_n8_k32	gen+mixed rc=0 60/60 pass	repo-test rc=0 0 failure(s)	buckets=M_p in [1,16] BLOCK_M=16, M_p in [17,64] BLOCK_M=64, M_p in [65,128] BLOCK_M=128
+e4_m32_n64_k32	gen+mixed rc=0 60/60 pass	repo-test rc=0 0 failure(s)	buckets=M_p in [1,16] BLOCK_M=16, M_p in [17,32] BLOCK_M=32

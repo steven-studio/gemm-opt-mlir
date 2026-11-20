@@ -1,0 +1,19 @@
+     10s rss=  1.00G hwm=  1.03G  analyzeNest > analyzeDomains > synthesizeProgram > enumerateDomain > Enumerator::enumerate > Enumerator::visit
+     20s rss=  2.25G hwm=  2.25G  analyzeDomains > synthesizeProgram > enumerateDomain > Enumerator::enumerate > Enumerator::visit > AccessTable::add > TupleTable::intern
+     30s rss=  3.53G hwm=  3.57G  analyzeNest > analyzeDomains > synthesizeProgram > enumerateDomain > Enumerator::enumerate > Enumerator::visit
+     40s rss=  4.74G hwm=  4.81G  analyzeDomains > synthesizeProgram > enumerateDomain > Enumerator::enumerate > Enumerator::visit > runKeepingState > MacEvent,
+     50s rss=  5.90G hwm=  5.93G  synthesizeProgram > enumerateDomain > Enumerator::enumerate > Enumerator::visit > runKeepingState > stepConfiguration > TermNode
+     60s rss=  7.08G hwm=  7.12G  synthesizeProgram > enumerateDomain > Enumerator::enumerate > Enumerator::visit > runKeepingState > stepConfiguration > TermNode
+     70s rss=  8.32G hwm=  8.42G  synthesizeProgram > enumerateDomain > Enumerator::enumerate > Enumerator::visit > runKeepingState > stepConfiguration > TermNode
+     80s rss=  9.35G hwm=  9.35G  analyzeDomains > synthesizeProgram > enumerateDomain > Enumerator::enumerate > Enumerator::visit > AccessTable::add > TupleTable::intern
+     90s rss= 10.46G hwm= 10.48G  synthesizeProgram > enumerateDomain > Enumerator::enumerate > Enumerator::visit > runKeepingState > stepConfiguration > TermNode
+    100s rss= 11.64G hwm= 11.64G  analyzeDomains > synthesizeProgram > enumerateDomain > Enumerator::enumerate > Enumerator::visit > AccessTable::add > TupleTable::intern
+    110s rss= 12.69G hwm= 12.73G  synthesizeProgram > enumerateDomain > Enumerator::enumerate > Enumerator::visit > runKeepingState > stepConfiguration > TermNode
+    120s rss= 13.88G hwm= 13.97G  analyzeDomains > synthesizeProgram > enumerateDomain > Enumerator::enumerate > Enumerator::visit > AccessTable::add > TupleTable::intern
+    130s rss= 15.06G hwm= 15.06G  analyzeDomains > synthesizeProgram > enumerateDomain > Enumerator::enumerate > Enumerator::visit > AccessTable::add > TupleTable::intern
+    140s rss= 16.19G hwm= 16.19G  analyzeNest > analyzeDomains > synthesizeProgram > enumerateDomain > Enumerator::enumerate > Enumerator::visit > AccessTable::add
+    150s rss= 17.22G hwm= 17.27G  analyzeNest > analyzeDomains > synthesizeProgram > enumerateDomain > Enumerator::enumerate > Enumerator::visit > AccessTable::add
+    160s rss= 18.46G hwm= 18.46G  analyzeDomains > synthesizeProgram > enumerateDomain > Enumerator::enumerate > Enumerator::visit > runKeepingState > MacEvent,
+    170s rss= 19.43G hwm= 19.57G  analyzeDomains > synthesizeProgram > enumerateDomain > Enumerator::enumerate > Enumerator::visit > runKeepingState > MacEvent,
+    180s rss= 20.75G hwm= 20.75G  analyzeDomains > synthesizeProgram > enumerateDomain > Enumerator::enumerate > Enumerator::visit > AccessTable::add > TupleTable::intern
+    190s rss= 21.66G hwm= 21.72G  synthesizeProgram > enumerateDomain > Enumerator::enumerate > Enumerator::visit > runKeepingState > stepConfiguration > TermNode

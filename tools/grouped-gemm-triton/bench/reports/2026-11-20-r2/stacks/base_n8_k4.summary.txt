@@ -1,0 +1,11 @@
+      5s rss=  0.45G hwm=  0.45G  analyzeDomains > synthesizeProgram > enumerateDomain > Enumerator::enumerate > Enumerator::visit > AccessTable::add > TupleTable::intern
+     10s rss=  0.68G hwm=  0.70G  analyzeNest > analyzeDomains > synthesizeProgram > Driver::searchGroup > checkFamilyFinite > checkCandidate > inspectCandidate
+     15s rss=  0.68G hwm=  0.70G  analyzeNest > analyzeDomains > synthesizeProgram > Driver::searchGroup > checkFamilyFinite > checkCandidate > inspectCandidate
+     20s rss=  0.69G hwm=  0.70G  analyzeDomains > synthesizeProgram > Driver::searchGroup > checkFamilyFinite > checkCandidate > inspectCandidate > Inspection::measure
+     25s rss=  0.70G hwm=  0.70G  analyzeDomains > synthesizeProgram > Driver::searchGroup > checkFamilyFinite > checkCandidate > inspectCandidate > Inspection::findSupport
+     30s rss=  0.71G hwm=  0.72G  Driver::searchGroup > checkFamilySymbolic > checkCertificate > Checker::dischargeLevel > Checker::discharge > Z3Backend::check > z3
+     35s rss=  0.69G hwm=  0.72G  analyzeDomains > enumerateDomain > checkCertificate > Checker::dischargeGuards > Checker::discharge > Z3Backend::check > z3
+     40s rss=  1.38G hwm=  1.38G  analyzeNest > analyzeDomains > proposeDomain > EventEvaluator::value > evaluateTerm > TermNode
+     45s rss=  1.99G hwm=  1.99G  analyzeNest > analyzeDomains > proposeDomain > fitOrder
+     50s rss=  1.99G hwm=  1.99G  analyzeNest > analyzeDomains > checkReduction > checkComputationFinite > finiteOver > replayGroup
+     55s rss=  1.99G hwm=  1.99G  analyzeNest > analyzeDomains > checkReduction > checkDomainFinite > finiteClaim > concreteLess

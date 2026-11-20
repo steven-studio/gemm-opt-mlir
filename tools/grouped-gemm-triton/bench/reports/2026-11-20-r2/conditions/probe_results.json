@@ -1,0 +1,24 @@
+{
+ "X aliases C": "accepted (no error)",
+ "W aliases C": "accepted (no error)",
+ "ids out of range of X": "raised RuntimeError: Triton Error [CUDA]: an illegal memory access was encountered (device fault, not a host check)",
+ "ptx m1_16": {
+  "fma.rn.f32": 32,
+  "mul.f32": 0,
+  "add.f32": 0,
+  "mma": 0
+ },
+ "ptx m17_64": {
+  "fma.rn.f32": 128,
+  "mul.f32": 0,
+  "add.f32": 0,
+  "mma": 0
+ },
+ "ptx m65_128": {
+  "fma.rn.f32": 128,
+  "mul.f32": 0,
+  "add.f32": 0,
+  "mma": 0
+ },
+ "negative id": "accepted (no error, no fault)"
+}
