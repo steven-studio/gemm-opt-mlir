@@ -201,6 +201,20 @@ case("scatter_add", "4 indirect",
      "    C[ids[p * 128 + i]][j] += X[p * 128 + i][k] * W[p][k][j];\n}\n",
      f"--table=3:0:2 --authorize={AUTH2},roots 2 and 3 are separate")
 
+# The same scatter-add with as many rows of C as ids (4): the ids can be injective, and
+# whether they are is known only at run time.
+case("scatter_add_c4", "4 indirect",
+     fn("%a: memref<4x2xf32>, %b: memref<2x2x2xf32>, %c: memref<4x2xf32>, %ids: memref<4xindex>",
+        nest([("%p", "%c0", "%c2", "%c1", ""), ("%i", "%c0", "%c2", "%c1", ""), ("%j", "%c0", "%c2", "%c1", ""),
+              ("%k", "%c0", "%c2", "%c1", "%r0 = arith.muli %p, %c2 : index\n%r = arith.addi %r0, %i : index\n"
+                                          "%t = memref.load %ids[%r] : memref<4xindex>")],
+             mac("%a[%r, %k]", "%b[%p, %k, %j]", "%c[%t, %j]", "memref<4x2xf32>", "memref<2x2x2xf32>", "memref<4x2xf32>"))),
+     "void f(float X[restrict 1024][64], float W[restrict 8][64][64], float C[restrict 1024][64], const long *restrict ids) {\n"
+     "  for (long p = 0; p < 8; p++) for (long i = 0; i < 128; i++) for (long j = 0; j < 64; j++) for (long k = 0; k < 64; k++)\n"
+     "    C[ids[p * 128 + i]][j] += X[p * 128 + i][k] * W[p][k][j];\n}\n",
+     f"--table=3:0:3 --authorize={AUTH2},roots 2 and 3 are separate",
+     note="C has as many rows as ids: injective ids are possible; collisions too")
+
 # ---- 5. Non-linear index ---------------------------------------------------------------
 case("square_index", "5 non-linear",
      fn("%a: memref<3x2xf32>, %b: memref<2x2xf32>, %c: memref<9x2xf32>",

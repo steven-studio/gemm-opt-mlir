@@ -35,7 +35,14 @@ std::vector<std::vector<APInt>> samplePoints(const SemanticProgram &program,
             high = std::min(high, range.upper.getSExtValue());
           }
       int64_t start = std::max<int64_t>(low, 2);
-      for (int64_t v = start; v <= high && v < start + 3; ++v)
+      int64_t count = 3;
+      // A parameter of a distinct group needs as many values as its group has members.
+      for (const std::vector<unsigned> &group : scope.distinct)
+        if (llvm::is_contained(group, p.id)) {
+          start = low;
+          count = std::max<int64_t>(count, (int64_t)group.size());
+        }
+      for (int64_t v = start; v <= high && v < start + count; ++v)
         list.push_back(APInt(p.sort.width, (uint64_t)v, true, true));
       if (list.empty() && low <= high)
         list.push_back(APInt(p.sort.width, (uint64_t)high, true, true));
@@ -54,8 +61,17 @@ std::vector<std::vector<APInt>> samplePoints(const SemanticProgram &program,
         next.push_back(std::move(longer));
       }
     out = std::move(next);
-    if (out.size() > limit)
-      out.resize(limit);
+    // With distinct groups most prefixes may fail the premise: keep more, filter at the end.
+    uint64_t keep = scope.distinct.empty() ? limit : std::max<uint64_t>(limit, 1u << 16);
+    if (out.size() > keep)
+      out.resize(keep);
+  }
+  if (!scope.distinct.empty()) {
+    std::vector<std::vector<APInt>> inside;
+    for (auto &point : out)
+      if (parametersInScope(scope, point) && inside.size() < limit)
+        inside.push_back(std::move(point));
+    out = std::move(inside);
   }
   return out;
 }

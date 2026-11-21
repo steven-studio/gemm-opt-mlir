@@ -26,6 +26,10 @@ struct SynthesisLimits {
   unsigned maxRounds = 300, maxClauses = 4000, maxCandidates = 5;
   unsigned maxBatchAtoms = 3;
   SmtLimits solver;
+  /// Offer the family of the loop counters (each on the axis of the views it moves) before
+  /// any other candidate. For nests whose addresses read index tables as parameters, where
+  /// a repeated index merges logical outputs at a sample. Off: the search is unchanged.
+  bool countersFirst = false;
 };
 
 /// A selector of `atom` on `axis`, or its negation.

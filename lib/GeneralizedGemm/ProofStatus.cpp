@@ -102,6 +102,14 @@ bool scopeContains(const DomainEvidence &evidence,
         value.slt(range.lower) || value.sgt(range.upper))
       return false;
   }
+  for (const std::vector<unsigned> &group : evidence.scope.distinct)
+    for (size_t a = 0; a < group.size(); ++a)
+      for (size_t b = a + 1; b < group.size(); ++b) {
+        if (group[a] >= parameters.size() || group[b] >= parameters.size())
+          return false;
+        if (parameters[group[a]] == parameters[group[b]])
+          return false;
+      }
   return true;
 }
 

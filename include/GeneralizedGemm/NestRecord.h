@@ -57,6 +57,16 @@ struct NestAnalysisOptions {
   unsigned candidatesPerGroup = 2, maxQueries = 4000;
   /// Over the function's arguments. Empty: no restriction, as with the domain driver.
   std::vector<NestScopeEntry> scope;
+  /// Groups of the function's scalar arguments whose values are pairwise distinct (the
+  /// cells of an index table said to be injective): a premise of every claim, like the
+  /// scope, which a caller must check at run time. With distinctSearchOnly, the premise
+  /// only steers the coordinate search (which points it samples); the checkers then judge
+  /// the candidates over the scope without it, and no claim rests on it.
+  std::vector<std::vector<unsigned>> distinct;
+  bool distinctSearchOnly = false;
+  /// The coordinate search offers the loop counters' family first (SynthesisLimits::
+  /// countersFirst). Set where index tables were read as parameters.
+  bool countersFirst = false;
   /// Section 14 of docs/GENERALIZED_GEMM_STATEMENT_BV.md. Search for inductive invariants
   /// over the integer state at the loop headers of the copy (a subscript carried by
   /// iter_args is a function of the counters only by such an invariant), and hand what
@@ -217,6 +227,9 @@ struct NestRecord {
   std::string bindingSha, bindingRefusal; // GemmOpt/NestBinding.h; see OutlinedNest.
   unsigned indexWidth = 0;                // The width every claim is made at.
   std::vector<NestScopeEntry> scope;      // Ranges of the function's arguments; empty: every value.
+  std::vector<std::vector<unsigned>> distinct; // Premise: these arguments pairwise distinct.
+  bool distinctSearchOnly = false;             // The groups steered the search only.
+  bool outputInjectiveProven = false;          // C1 proved over the scope (the mapping's fact).
 };
 
 const char *stringifyNestStatus(NestRecord::Status status);

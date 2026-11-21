@@ -129,6 +129,11 @@ std::string requestBinding(const DomainOptions &options, const CoordinateFamily 
   for (const ParameterRange &range : options.scope.ranges)
     out += std::to_string(range.parameter) + ":" + std::to_string(range.lower.getSExtValue()) +
            ":" + std::to_string(range.upper.getSExtValue()) + ",";
+  for (const std::vector<unsigned> &group : options.scope.distinct) {
+    out += "|distinct";
+    for (unsigned id : group)
+      out += ":" + std::to_string(id);
+  }
   for (const std::string &name : options.authorized)
     out += "|" + name;
   for (const GuardedLevel &level : request.order.levels)

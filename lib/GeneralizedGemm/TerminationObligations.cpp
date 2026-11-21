@@ -93,12 +93,27 @@ Term scopeFormula(const SemanticProgram &program, const ParameterScope &scope,
           all, terms.icmp(Predicate::Sge, terms.param(p.id, p.sort),
                           terms.bv(APInt::getZero(p.sort.width))));
   if (scope.allParameters) {
-    if (!scope.ranges.empty()) {
+    if (!scope.ranges.empty() || !scope.distinct.empty()) {
       why = "a scope over all parameters lists ranges";
       return nullptr;
     }
     return all;
   }
+  for (const std::vector<unsigned> &group : scope.distinct)
+    for (size_t a = 0; a < group.size(); ++a)
+      for (size_t b = a + 1; b < group.size(); ++b) {
+        if (group[a] >= program.parameters.size() || group[b] >= program.parameters.size()) {
+          why = "a distinct group names no parameter";
+          return nullptr;
+        }
+        const Parameter &x = program.parameters[group[a]], &y = program.parameters[group[b]];
+        if (x.sort.kind != Sort::BV || !(x.sort == y.sort)) {
+          why = "a distinct group mixes sorts or is not on integers";
+          return nullptr;
+        }
+        all = terms.logicalAnd(all, terms.logicalNot(terms.icmp(Predicate::Eq, terms.param(x.id, x.sort),
+                                                                terms.param(y.id, y.sort))));
+      }
   for (const ParameterRange &range : scope.ranges) {
     if (range.parameter >= program.parameters.size()) {
       why = "a range names no parameter";

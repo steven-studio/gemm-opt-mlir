@@ -188,6 +188,15 @@ std::map<unsigned, Term> onceAssignedDefinitions(const SemanticProgram &program)
   return out;
 }
 
+std::set<unsigned> steppedStates(const SemanticProgram &program) {
+  std::set<unsigned> out;
+  for (const Transition &t : program.transitions)
+    for (const auto &[id, term] : t.assignments)
+      if (!(term->op == TermOp::State && term->index == id) && llvm::is_contained(stateSupport(term), id))
+        out.insert(id);
+  return out;
+}
+
 std::vector<GuardBound> guardBounds(const SemanticProgram &program) {
   TermContext &terms = *program.terms;
   std::map<unsigned, Term> definitions = onceAssignedDefinitions(program);

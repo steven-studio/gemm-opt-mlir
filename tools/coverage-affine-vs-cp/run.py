@@ -93,6 +93,67 @@ def cp(reporter, src, d, flags, tag, strip_table=False):
     return res
 
 
+# ---- CP, the automatic pipeline: --auto and nothing per case ---------------------------
+AUTO_CLASS = {"parallel": ("ACCEPT_PARALLEL", ""),
+              "parallel_if_injective": ("ACCEPT_PARALLEL", "guarded"),
+              "csr_reduction": ("ACCEPT_PARALLEL", "csr"),
+              "serial": ("ACCEPT_SERIAL", ""),
+              "as_written": ("REJECT", "")}
+
+
+def cp_auto(reporter, src, d):
+    out, err = os.path.join(d, "cp_auto.json"), os.path.join(d, "cp_auto.err")
+    args = CP_COMMON.split() + ["--auto"]
+    rc, secs = run([reporter, src] + args, out, err)
+    res = {"cmd": " ".join([reporter, src] + args), "rc": rc, "seconds": secs}
+    if rc != 0:
+        res.update(cls="ERROR", reason=open(err).read().strip()[-300:] or f"rc {rc}")
+        return res
+    try:
+        n = json.load(open(out))[0]["nests"][0]
+    except Exception as e:  # noqa: BLE001
+        res.update(cls="ERROR", reason=f"no record: {e}")
+        return res
+    auto = n.get("auto", {})
+    plan = auto.get("plan", {})
+    cls, how = AUTO_CLASS.get(plan.get("fast_path"), ("ERROR", ""))
+    passes = auto.get("passes", {})
+    res.update(cls=cls, how=how, plan=plan, passes=passes, status=n.get("status"),
+               fold=n.get("ordered_fold_verified"),
+               premises=[(p["kind"], p.get("argument", p.get("arguments")), p.get("lower"), p.get("upper"))
+                         for p in auto.get("premises", [])],
+               notes=auto.get("notes", []), refusals=n.get("refusals", []))
+    spec = passes.get("speculation", {})
+    why = {"parallel": "fold verified, C1 proved under the inferred premises",
+           "parallel_if_injective": "fold verified; C1 proved under the speculative premise that the table is "
+                                    "injective (checked at run time); on a repeated index: "
+                                    + str(plan.get("on_repeated_index")),
+           "csr_reduction": "fold verified without the injectivity premise; C1 not proved"
+                            + (f" ({spec['skipped']})" if spec.get("skipped") else "")
+                            + ": tiles plus the two-layer CSR reduction",
+           "serial": "fold verified, C1 not proved",
+           "as_written": (n.get("refusals") or [n.get("status")])[0]}
+    res["reason"] = why.get(plan.get("fast_path"), "")
+    return res
+
+
+def runtime(src, d):
+    """Lowers the --auto record (tools/scatter-gemm-triton) and runs the scenarios on the GPU."""
+    tool = os.path.join(HERE, "../scatter-gemm-triton")
+    mod, out = os.path.join(d, "lowered.py"), os.path.join(d, "runtime.json")
+    rc, _ = run([sys.executable, os.path.join(tool, "scatter_gemm_triton.py"), src, os.path.join(d, "cp_auto.json"),
+                 "-o", mod], os.path.join(d, "lower.out"), os.path.join(d, "lower.err"))
+    if rc != 0:
+        return {"refused": open(os.path.join(d, "lower.err")).read().strip()}
+    rc, _ = run([sys.executable, os.path.join(tool, "test", "test_scatter_gemm_triton.py"), src,
+                 os.path.join(d, "cp_auto.json"), mod, "--json", out],
+                os.path.join(d, "runtime.out"), os.path.join(d, "runtime.err"))
+    try:
+        return {"rc": rc, "scenarios": json.load(open(out))}
+    except Exception as e:  # noqa: BLE001
+        return {"rc": rc, "error": str(e) + " " + open(os.path.join(d, "runtime.err")).read()[-300:]}
+
+
 # ---- MLIR affine --------------------------------------------------------------------------
 def affine(src, d, nloops, manual=False):
     tag = "affine_manual" if manual else "affine"
@@ -180,7 +241,8 @@ def main():
     ap.add_argument("outdir")
     ap.add_argument("--cases", default="")
     ap.add_argument("--cp", default=os.path.join(HERE, "../../build/research/generalized-gemm/generalized-gemm-nest-report"))
-    ap.add_argument("--cp-main", default=f"{HOME}/work/gemm-opt-mlir/build/research/generalized-gemm/generalized-gemm-nest-report")
+    ap.add_argument("--cp-main", default=os.path.join(HERE, "../../build/research/generalized-gemm/generalized-gemm-nest-report"),
+                    help="the reporter for the column without tables (--table and its separation removed)")
     a = ap.parse_args()
     os.makedirs(a.outdir, exist_ok=True)
     want = set(filter(None, a.cases.split(",")))
@@ -197,16 +259,20 @@ def main():
         r = {"name": c["name"], "category": c["category"], "note": c["note"], "loops": n,
              "cp": cp(os.path.abspath(a.cp), src, d, c["cp"], "cp"),
              "cp_main": cp(a.cp_main, src, d, c["cp"], "cp_main", strip_table=True),
+             "cp_auto": cp_auto(os.path.abspath(a.cp), src, d),
              "mlir_affine": affine(src, d, n),
              "mlir_affine_manual": None,
              "polly": polly(csrc, d, n, POLLY_DEFAULT, "polly"),
              "polly_permissive": polly(csrc, d, n, POLLY_PERMISSIVE, "polly_permissive")}
+        if r["cp_auto"].get("plan", {}).get("fast_path") in ("parallel_if_injective", "csr_reduction"):
+            r["runtime"] = runtime(src, d)
         if c.get("affine"):
             msrc = os.path.join(d, "manual_affine.mlir")
             open(msrc, "w").write(c["affine"])
             r["mlir_affine_manual"] = affine(msrc, d, n, manual=True)
         results.append(r)
-        print(f"{c['name']:20s} CP={r['cp']['cls']:15s} CPmain={r['cp_main']['cls']:15s} "
+        print(f"{c['name']:20s} CP={r['cp']['cls']:15s} CPauto={r['cp_auto']['cls']}/{r['cp_auto'].get('how', '')} "
+              f"CPmain={r['cp_main']['cls']:15s} "
               f"affine={r['mlir_affine']['cls']:15s} affine_hand={(r['mlir_affine_manual'] or {}).get('cls', '-'):15s} "
               f"polly={r['polly']['cls']:15s} "
               f"polly+={r['polly_permissive']['cls']}", flush=True)

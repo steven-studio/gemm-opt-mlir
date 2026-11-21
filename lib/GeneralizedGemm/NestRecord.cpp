@@ -299,6 +299,41 @@ NestRecord analyzeNest(const OutlinedNest &nest, const NestAnalysisOptions &opti
     }
   }
 
+  // Distinct groups, given over the function's arguments, on the copy's parameters.
+  ParameterScope searchScope = scope;
+  if (!options.distinct.empty()) {
+    if (scope.allParameters) {
+      r.refusals.push_back("a distinct group needs a scope");
+      return r;
+    }
+    for (const std::vector<unsigned> &group : options.distinct) {
+      std::vector<unsigned> ids;
+      for (unsigned argument : group)
+        for (const NestScalar &scalar : nest.scalars)
+          if (scalar.argument == argument && scalar.source == NestScalar::FunctionArgument)
+            for (const Parameter &parameter : program.parameters)
+              if (parameter.kind == Parameter::Scalar && parameter.argument == scalar.outlined)
+                ids.push_back(parameter.id);
+      if (ids.size() < 2)
+        continue; // Fewer than two of them reach the nest: nothing to say.
+      std::string text;
+      for (unsigned argument : group)
+        text += (text.empty() ? "" : ", ") + std::to_string(argument);
+      searchScope.distinct.push_back(ids);
+      r.distinct.push_back(group);
+      if (options.distinctSearchOnly) {
+        r.assumptions.push_back("the coordinate search sampled only points where the arguments " + text +
+                                " are pairwise distinct; the checkers judged over the scope without that, "
+                                "so no claim rests on it");
+      } else {
+        scope.distinct.push_back(ids);
+        r.assumptions.push_back("the arguments " + text + " of the function are pairwise distinct: a premise "
+                                "of every claim, like the scope (the caller checks it at run time)");
+      }
+    }
+    r.distinctSearchOnly = options.distinctSearchOnly;
+  }
+
   // Separation, as it stands in the function, handed over by name.
   Authorizations authorized;
   for (const NestSeparation &separation : nest.separations)
@@ -307,7 +342,8 @@ NestRecord analyzeNest(const OutlinedNest &nest, const NestAnalysisOptions &opti
 
   TerminationOptions termination;
   SynthesisOptions synthesis;
-  termination.scope = synthesis.scope = scope;
+  termination.scope = scope;
+  synthesis.scope = searchScope;
   termination.limits.solver.timeoutMilliseconds = options.timeoutMs;
   termination.limits.solver.resourceLimit = options.resourceLimit;
   termination.authorized = authorized;
@@ -316,6 +352,7 @@ NestRecord analyzeNest(const OutlinedNest &nest, const NestAnalysisOptions &opti
   synthesis.limits.maxPoints = options.maxPoints;
   synthesis.maxLevel = options.maxLevel;
   synthesis.synthesis.maxCandidates = options.maxCandidates;
+  synthesis.synthesis.countersFirst = options.countersFirst;
   synthesis.synthesis.maxRounds = options.maxRounds;
   synthesis.synthesis.solver = termination.limits.solver;
   synthesis.referenceFill = options.referenceFill;
@@ -374,7 +411,6 @@ NestRecord analyzeNest(const OutlinedNest &nest, const NestAnalysisOptions &opti
                                " at L" + std::to_string(identity.cut));
   }
   DomainResult result = analyzeDomains(program, handed, request, backend);
-
   const DomainEnumeration &enumeration = result.enumeration;
   r.gate = stringifyGateStatus(enumeration.gate);
   r.gateReason = enumeration.reason;
@@ -803,6 +839,7 @@ NestRecord analyzeNest(const OutlinedNest &nest, const NestAnalysisOptions &opti
   facts.unitMultiplicity = domain.multiplicity() == DomainMultiplicity::Unit;
   facts.multiplicity = stringifyDomainMultiplicity(domain.multiplicity());
   facts.outputInjective = provenOverScope(domain.outputInjective());
+  r.outputInjectiveProven = facts.outputInjective;
   facts.outputInjectiveFact = factText(domain.outputInjective());
   std::vector<std::string> unmapped = mappingRefusals(r, facts);
   bool mapped = unmapped.empty() && r.extents.has_value();
@@ -931,6 +968,17 @@ json::Object toJSON(const NestRecord &r, const std::vector<FunctionRoot> &roots)
   for (const NestScopeEntry &entry : r.scope)
     scopeEntries.push_back(
         json::Object{{"argument", (int64_t)entry.argument}, {"lower", entry.lower}, {"upper", entry.upper}});
+  json::Array distinctGroups;
+  for (const std::vector<unsigned> &group : r.distinct) {
+    json::Array arguments;
+    for (unsigned argument : group)
+      arguments.push_back((int64_t)argument);
+    distinctGroups.push_back(std::move(arguments));
+  }
+  if (!r.distinct.empty())
+    out["distinct"] = json::Object{{"groups", std::move(distinctGroups)},
+                                   {"premise", !r.distinctSearchOnly},
+                                   {"search_only", r.distinctSearchOnly}};
   out["binding"] = json::Object{{"scheme", mlir::gemm_opt::kNestBindingScheme},
                                 {"sha256", r.bindingSha.empty() ? json::Value(nullptr) : json::Value(r.bindingSha)},
                                 {"reason", r.bindingRefusal},

@@ -34,9 +34,7 @@ public:
   Search(const SemanticProgram &program, const AtomBank &bank,
          ArrayRef<const AccessDomain *> domains, const SynthesisLimits &limits,
          SmtBackend &backend)
-      : bank(bank), domains(domains), limits(limits), backend(backend) {
-    (void)program;
-  }
+      : program(program), bank(bank), domains(domains), limits(limits), backend(backend) {}
 
   SynthesisOutcome run();
 
@@ -51,9 +49,11 @@ private:
   void accept(const Selection &selection);
   std::vector<uint32_t> kernelKey(const Selection &selection) const;
   void seed();
+  void seedCounters();
   std::optional<std::vector<unsigned>> atomsFor(const std::vector<Partition> &target,
                                                 ArrayRef<unsigned> given) const;
 
+  const SemanticProgram &program;
   const AtomBank &bank;
   ArrayRef<const AccessDomain *> domains;
   const SynthesisLimits &limits;
@@ -390,7 +390,69 @@ void Search::seed() {
     accept(selection);
 }
 
+/// A second seed, only when the canonical one gives nothing: the family of the counters
+/// themselves, each on the axis named by the views it moves. A counter that changes C's
+/// cell and A's address (and not B's) is I; C and B, J; A and B, K; all three, P. Whether a
+/// counter moves a view is read off the samples: two events agreeing on every other
+/// counter, differing on this one, with different addresses of the view. When an index
+/// table makes two logical outputs share a cell at some sample (a scatter-add whose ids
+/// repeat), the canonical partition of C's cells mixes them; the counters do not. A
+/// proposal like any other: the judge below and then every checker decide.
+void Search::seedCounters() {
+  std::set<unsigned> counters = steppedStates(program);
+  std::vector<unsigned> leaves;
+  for (unsigned a = 0; a < bank.atoms.size(); ++a) {
+    if (!bank.atoms[a].term || bank.atoms[a].term->op != TermOp::State ||
+        !counters.count(bank.atoms[a].term->index))
+      continue;
+    bool varies = false;
+    for (unsigned d = 0; d < domains.size() && !varies; ++d)
+      for (size_t e = 1; e < bank.atoms[a].values[d].size() && !varies; ++e)
+        varies = bank.atoms[a].values[d][e] != bank.atoms[a].values[d][0];
+    if (varies)
+      leaves.push_back(a);
+  }
+  if (leaves.empty())
+    return;
+  Selection selection;
+  for (unsigned a : leaves) {
+    std::array<bool, 3> moves{false, false, false}; // h, f, g
+    for (unsigned d = 0; d < domains.size(); ++d) {
+      const auto &events = domains[d]->table().events();
+      std::map<std::vector<uint64_t>, std::map<uint64_t, std::array<uint32_t, 3>>> byOthers;
+      for (size_t e = 0; e < events.size(); ++e) {
+        std::vector<uint64_t> others;
+        for (unsigned b : leaves)
+          if (b != a)
+            others.push_back(bank.atoms[b].values[d][e]);
+        std::array<uint32_t, 3> views{events[e].h, events[e].f, events[e].g};
+        auto &row = byOthers[others];
+        for (const auto &[value, seen] : row)
+          if (value != bank.atoms[a].values[d][e])
+            for (unsigned v = 0; v < 3; ++v)
+              moves[v] = moves[v] || seen[v] != views[v];
+        row.try_emplace(bank.atoms[a].values[d][e], views);
+      }
+    }
+    int axis = moves[0] && moves[1] && moves[2] ? AxisP
+               : moves[0] && moves[1] && !moves[2] ? AxisI
+               : moves[0] && !moves[1] && moves[2] ? AxisJ
+               : !moves[0] && moves[1] && moves[2] ? AxisK
+                                                   : -1;
+    if (axis < 0)
+      return; // A counter that moves one view or none: no role, no seed.
+    selection[axis].push_back(a);
+  }
+  if (selection[AxisI].empty() || selection[AxisJ].empty() || selection[AxisK].empty())
+    return;
+  bool stuck = false;
+  if (judge(selection, Mode{false, false}, stuck))
+    accept(selection);
+}
+
 SynthesisOutcome Search::run() {
+  if (limits.countersFirst)
+    seedCounters();
   seed();
   // Preference, by search order only: a box before a partial domain, unit
   // multiplicity, every axis present, few batch atoms, small tuples.

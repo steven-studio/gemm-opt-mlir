@@ -28,6 +28,7 @@
 #include "llvm/ADT/SmallVector.h"
 
 #include <map>
+#include <set>
 #include <string>
 #include <vector>
 
@@ -96,6 +97,10 @@ struct GuardBound {
   bool start = false; // A loop's start (lower), not a comparison of a guard.
 };
 std::vector<GuardBound> guardBounds(const SemanticProgram &program);
+
+/// States some transition sets from a term that reads the state itself (and is not the
+/// state alone): the counters of loops, and accumulators. A proposal's input.
+std::set<unsigned> steppedStates(const SemanticProgram &program);
 
 /// "L1 -0-> L2 -1-> L1": locations and successor slots.
 std::string describePath(const SemanticProgram &program, const CutPath &path);

@@ -467,6 +467,45 @@ bool enumerationCoversScope(const SemanticProgram &program, const DomainEnumerat
     if (overflow)
       return false;
   }
+  if (!scope.distinct.empty()) {
+    // Only the box points that keep each distinct group apart are in the scope: count them.
+    if (expected.ugt(1u << 22))
+      return false;
+    std::vector<std::pair<int64_t, int64_t>> box;
+    for (const Parameter &p : program.parameters) {
+      if (p.sort.kind != Sort::BV) {
+        box.push_back({0, 0});
+        continue;
+      }
+      for (const ParameterRange &r : scope.ranges)
+        if (r.parameter == p.id)
+          box.push_back({r.lower.getSExtValue(), r.upper.getSExtValue()});
+    }
+    if (box.size() != program.parameters.size())
+      return false;
+    std::vector<int64_t> at;
+    for (const auto &range : box)
+      at.push_back(range.first);
+    uint64_t inside = 0;
+    while (true) {
+      std::vector<APInt> point;
+      for (const Parameter &p : program.parameters)
+        point.push_back(APInt(p.sort.width, (uint64_t)at[p.id], /*isSigned=*/true, /*implicitTrunc=*/true));
+      if (parametersInScope(scope, point))
+        ++inside;
+      unsigned d = 0;
+      for (; d < at.size(); ++d) {
+        if (at[d] < box[d].second) {
+          ++at[d];
+          break;
+        }
+        at[d] = box[d].first;
+      }
+      if (d == at.size())
+        break;
+    }
+    expected = APInt(128, inside);
+  }
   std::set<std::vector<uint64_t>> seen;
   for (const PointEvidence &point : enumeration.points) {
     if (!parametersInScope(scope, point.parameters))
@@ -487,6 +526,11 @@ std::string scopeBinding(const ComputationOptions &options) {
   for (const ParameterRange &range : options.scope.ranges)
     out += std::to_string(range.parameter) + ":" + std::to_string(range.lower.getSExtValue()) +
            ":" + std::to_string(range.upper.getSExtValue()) + ",";
+  for (const std::vector<unsigned> &group : options.scope.distinct) {
+    out += "|distinct";
+    for (unsigned id : group)
+      out += ":" + std::to_string(id);
+  }
   for (const std::string &name : options.authorized)
     out += "|" + name;
   return out;
@@ -1067,11 +1111,32 @@ bool Proof::hasEventfulPoint() {
   // The diagonal first (every parameter lower + k), then staircases over the parameters'
   // order (parameter i at lower + k * (i + 1), and the reverse), which reach the points
   // where a table of bounds grows from one cell to the next (a row pointer).
-  for (uint64_t probe = 0; probe < 48; ++probe) {
+  // With distinct groups, a fourth shape: the diagonal, but a group's members at lower +
+  // (position in the group + k) modulo the range's span, so that they stay apart.
+  uint64_t probes = options.scope.distinct.empty() ? 48 : 64;
+  for (uint64_t probe = 0; probe < probes; ++probe) {
     uint64_t k = probe % 16, shape = probe / 16;
     std::vector<APInt> point;
     for (const Parameter &p : program.parameters) {
       APInt value(p.sort.width, 0);
+      if (p.sort.kind == Sort::BV && shape == 3) {
+        uint64_t step = k;
+        for (const std::vector<unsigned> &group : options.scope.distinct)
+          for (size_t at = 0; at < group.size(); ++at)
+            if (group[at] == p.id)
+              step = k + at;
+        for (const ParameterRange &range : options.scope.ranges)
+          if (range.parameter == p.id) {
+            uint64_t span = (uint64_t)(range.upper.getSExtValue() - range.lower.getSExtValue()) + 1;
+            value = range.lower + APInt(p.sort.width, span ? step % span : 0, /*isSigned=*/false,
+                                        /*implicitTrunc=*/true);
+          }
+        if (llvm::none_of(options.scope.ranges,
+                          [&](const ParameterRange &range) { return range.parameter == p.id; }))
+          value = APInt(p.sort.width, step, /*isSigned=*/false, /*implicitTrunc=*/true);
+        point.push_back(value);
+        continue;
+      }
       if (p.sort.kind == Sort::BV) {
         uint64_t rank = shape == 0 ? 1 : shape == 1 ? p.id + 1 : program.parameters.size() - p.id;
         uint64_t step = k * rank;

@@ -77,6 +77,10 @@ struct ParameterRange {
 struct ParameterScope {
   std::vector<ParameterRange> ranges;
   bool allParameters = true; // No restriction. False for a concrete run.
+  /// Groups of parameters whose values are pairwise distinct: a premise, like the ranges
+  /// (the cells of an index table read as parameters, said to be injective). Only with
+  /// allParameters false. A point with two equal values in one group is outside the scope.
+  std::vector<std::vector<unsigned>> distinct;
 };
 
 struct DomainEvidence {
