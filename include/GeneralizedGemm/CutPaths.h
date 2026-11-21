@@ -27,6 +27,7 @@
 #include "llvm/ADT/ArrayRef.h"
 #include "llvm/ADT/SmallVector.h"
 
+#include <map>
 #include <string>
 #include <vector>
 
@@ -78,6 +79,23 @@ Term postTerm(const SemanticProgram &program, const CutPath &path, Term term);
 
 /// Whether any node below `term` has float sort.
 bool containsFloat(Term term);
+
+/// State assigned by exactly one transition, to one term with no load, no shadow, no
+/// float and no state of its own, every other transition keeping it: id -> that term.
+/// What the state holds where it is read is a guess (an outer counter it reads may have
+/// moved); only proposers use it, and the checkers judge what is built on it.
+std::map<unsigned, Term> onceAssignedDefinitions(const SemanticProgram &program);
+
+/// A comparison of a transition guard with a state variable alone on one side, read
+/// through onceAssignedDefinitions: state < bound (upper, exclusive) or bound <= state
+/// (lower, inclusive), the bound over parameters and other state. Proposals.
+struct GuardBound {
+  unsigned state = 0;
+  bool upper = true;
+  Term bound = nullptr;
+  bool start = false; // A loop's start (lower), not a comparison of a guard.
+};
+std::vector<GuardBound> guardBounds(const SemanticProgram &program);
 
 /// "L1 -0-> L2 -1-> L1": locations and successor slots.
 std::string describePath(const SemanticProgram &program, const CutPath &path);

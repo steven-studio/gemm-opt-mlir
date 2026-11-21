@@ -1,6 +1,8 @@
 #include "GeneralizedGemm/CoordinateSynthesis.h"
 
 #include "GeneralizedGemm/CandidateChecker.h"
+#include "GeneralizedGemm/CutPaths.h"
+#include "GeneralizedGemm/DomainModel.h"
 
 #include <algorithm>
 #include <map>
@@ -485,9 +487,27 @@ SynthesisOutcome synthesizeCoordinates(const SemanticProgram &program, const Ato
   return Search(program, bank, domains, limits, backend).run();
 }
 
+namespace {
+std::optional<EnumerationOrder> proposeOrderAt(const SemanticProgram &program,
+                                               const CoordinateFamily &family,
+                                               ArrayRef<const AccessDomain *> domains, bool extended);
+} // namespace
+
+/// The unit forms first; where they bound no order, the extended ones (bounds the
+/// program's guards and loop starts give, a level at a stride), so that an order proposed
+/// before is proposed the same.
 std::optional<EnumerationOrder> proposeOrder(const SemanticProgram &program,
                                              const CoordinateFamily &family,
                                              ArrayRef<const AccessDomain *> domains) {
+  if (auto order = proposeOrderAt(program, family, domains, false))
+    return order;
+  return proposeOrderAt(program, family, domains, true);
+}
+
+namespace {
+std::optional<EnumerationOrder> proposeOrderAt(const SemanticProgram &program,
+                                               const CoordinateFamily &family,
+                                               ArrayRef<const AccessDomain *> domains, bool extended) {
   TermContext &terms = *program.terms;
   std::vector<Term> components;
   for (const auto &axis : family.axes)
@@ -517,6 +537,8 @@ std::optional<EnumerationOrder> proposeOrder(const SemanticProgram &program,
 
   EnumerationOrder out;
   auto constant = [&](uint64_t v) { return terms.bv(APInt(width, v, false, true)); };
+  std::vector<GuardBound> bounds = guardBounds(program);
+
   for (unsigned m = 0; m < order->size(); ++m) {
     unsigned c = (*order)[m];
     // Per domain and per prefix of outer levels: the range this level covers.
@@ -535,6 +557,128 @@ std::optional<EnumerationOrder> proposeOrder(const SemanticProgram &program,
     OrderLevel level;
     level.value = components[c];
     level.lower = constant(low);
+    // A bound the program's own guards give (CutPaths.h, guardBounds): checked against
+    // every event, then read over outer levels as level variables. Nullptr where none
+    // fits; the symbolic checker judges what is proposed.
+    auto fromGuards = [&](bool upper) -> Term {
+      if (components[c]->op != TermOp::State)
+        return nullptr;
+      std::map<unsigned, unsigned> outerOfState;
+      for (unsigned q = 0; q < m; ++q)
+        if (components[(*order)[q]]->op == TermOp::State)
+          outerOfState[components[(*order)[q]]->index] = q;
+      for (const GuardBound &gb : bounds) {
+        if (gb.state != components[c]->index || gb.upper != upper || gb.bound->sort != components[c]->sort)
+          continue;
+        bool outerOnly = true;
+        for (unsigned id : stateSupport(gb.bound))
+          outerOnly = outerOnly && outerOfState.count(id);
+        if (!outerOnly)
+          continue;
+        bool fits = true;
+        for (unsigned d = 0; d < domains.size() && fits; ++d) {
+          EventEvaluator evaluator(program, *domains[d]);
+          std::map<std::vector<uint64_t>, uint64_t> want;
+          for (size_t e = 0; e < values[c][d].size(); ++e) {
+            std::vector<uint64_t> prefix;
+            for (unsigned outer = 0; outer < m; ++outer)
+              prefix.push_back(values[(*order)[outer]][d][e]);
+            uint64_t v = values[c][d][e];
+            auto [slot, added] = want.try_emplace(prefix, upper ? v + 1 : v);
+            if (!added)
+              slot->second = upper ? std::max(slot->second, v + 1) : std::min(slot->second, v);
+          }
+          for (size_t e = 0; e < values[c][d].size() && fits; ++e) {
+            std::vector<uint64_t> prefix;
+            for (unsigned outer = 0; outer < m; ++outer)
+              prefix.push_back(values[(*order)[outer]][d][e]);
+            // The bound encloses the events (V3 needs no more; coverage, which needs
+            // the exact set, is proved or not by the simulation).
+            auto got = evaluator.value(gb.bound, e);
+            fits = got && (upper ? got->getZExtValue() >= want[prefix] : got->getZExtValue() <= want[prefix]);
+          }
+        }
+        if (!fits)
+          continue;
+        return terms.substitute(gb.bound, [&](Term leaf) -> Term {
+          if (leaf->op != TermOp::State)
+            return nullptr;
+          unsigned q = outerOfState.at(leaf->index);
+          return terms.state(LevelVariableBase + q, components[(*order)[q]]->sort);
+        });
+      }
+      return nullptr;
+    };
+    // bound = a * outer level + (parameter) + c, a in 1..8, fitted to the extremes per
+    // prefix of every domain. Nullptr where none fits.
+    auto affineOuter = [&](bool upper) -> Term {
+      for (unsigned q = 0; q < m; ++q) {
+        if (components[(*order)[q]]->sort != components[c]->sort)
+          continue;
+        for (uint64_t a = 1; a <= 8; ++a)
+          for (int pi = -1; pi < (int)program.parameters.size(); ++pi) {
+            if (pi >= 0 && program.parameters[pi].sort != components[c]->sort)
+              continue;
+            std::optional<uint64_t> offset;
+            bool fits = true, any = false;
+            for (unsigned d = 0; d < domains.size() && fits; ++d) {
+              std::map<std::vector<uint64_t>, uint64_t> want;
+              for (size_t e = 0; e < values[c][d].size(); ++e) {
+                std::vector<uint64_t> prefix;
+                for (unsigned outer = 0; outer < m; ++outer)
+                  prefix.push_back(values[(*order)[outer]][d][e]);
+                uint64_t v = values[c][d][e];
+                auto [slot, added] = want.try_emplace(prefix, upper ? v + 1 : v);
+                if (!added)
+                  slot->second = upper ? std::max(slot->second, v + 1) : std::min(slot->second, v);
+              }
+              uint64_t pv = pi >= 0 ? domains[d]->parameters()[pi].getZExtValue() : 0;
+              for (const auto &[prefix, v] : want) {
+                uint64_t here = v - a * prefix[q] - pv;
+                any = true;
+                if (!offset)
+                  offset = here;
+                else if (*offset != here)
+                  fits = false;
+              }
+            }
+            if (!fits || !any)
+              continue;
+            Sort sort = components[c]->sort;
+            Term y = terms.state(LevelVariableBase + q, sort);
+            Term bound = a == 1 ? y : terms.binary(TermOp::Mul, terms.bv(APInt(width, a)), y);
+            if (pi >= 0)
+              bound = terms.binary(TermOp::Add, bound, terms.param(pi, sort));
+            if (*offset != 0)
+              bound = terms.binary(TermOp::Add, bound, constant(*offset));
+            return bound;
+          }
+      }
+      return nullptr;
+    };
+    {
+      // A lower bound that moves with outer levels.
+      std::set<uint64_t> lows;
+      for (unsigned d = 0; d < domains.size(); ++d) {
+        std::map<std::vector<uint64_t>, uint64_t> least;
+        for (size_t e = 0; e < values[c][d].size(); ++e) {
+          std::vector<uint64_t> prefix;
+          for (unsigned outer = 0; outer < m; ++outer)
+            prefix.push_back(values[(*order)[outer]][d][e]);
+          auto [slot, added] = least.try_emplace(prefix, values[c][d][e]);
+          if (!added)
+            slot->second = std::min(slot->second, values[c][d][e]);
+        }
+        for (const auto &[prefix, v] : least)
+          lows.insert(v);
+      }
+      if (extended && lows.size() > 1) {
+        if (Term guarded = fromGuards(false))
+          level.lower = guarded;
+        else if (Term fitted = affineOuter(false))
+          level.lower = fitted;
+      }
+    }
     // upper = base(parameters), or base + an outer level.
     bool fixed = true;
     std::vector<uint64_t> byDomain;
@@ -581,11 +725,22 @@ std::optional<EnumerationOrder> proposeOrder(const SemanticProgram &program,
         }
       }
     }
+    if (!found && extended)
+      if (Term guarded = fromGuards(true)) {
+        level.upper = guarded;
+        found = true;
+      }
+    if (!found && extended)
+      if (Term fitted = affineOuter(true)) {
+        level.upper = fitted;
+        found = true;
+      }
     if (!found)
       return std::nullopt;
     out.levels.push_back(level);
   }
   return out;
 }
+} // namespace
 
 } // namespace mlir::generalized_gemm

@@ -1,6 +1,7 @@
 #include "GeneralizedGemm/CoverageSimulation.h"
 
 #include "GeneralizedGemm/CutPaths.h"
+#include "GeneralizedGemm/DomainModel.h"
 
 #include <algorithm>
 #include <functional>
@@ -17,17 +18,30 @@ public:
   Order(const SemanticProgram &program, const EnumerationOrder &order)
       : terms(*program.terms), levels(order.levels) {}
 
+  /// A bound may read outer levels as level variables (DomainModel.h): read them as
+  /// the given values. The checker admits only outer ones.
+  Term atLevels(Term bound, ArrayRef<Term> values) const {
+    return terms.substitute(bound, [&](Term leaf) -> Term {
+      if (leaf->op == TermOp::State && leaf->index >= LevelVariableBase &&
+          leaf->index - LevelVariableBase < values.size())
+        return values[leaf->index - LevelVariableBase];
+      return nullptr;
+    });
+  }
+
   Term upper(unsigned m, ArrayRef<Term> values) const {
-    Term base = levels[m].upper;
+    Term base = atLevels(levels[m].upper, values);
     if (levels[m].upperOuter >= 0)
       base = terms.binary(TermOp::Add, base, values[levels[m].upperOuter]);
     return base;
   }
 
+  Term lower(unsigned m, ArrayRef<Term> values) const { return atLevels(levels[m].lower, values); }
+
   Term member(ArrayRef<Term> values) const {
     Term all = terms.boolean(true);
     for (unsigned m = 0; m < levels.size(); ++m) {
-      all = terms.logicalAnd(all, terms.icmp(Predicate::Ule, levels[m].lower, values[m]));
+      all = terms.logicalAnd(all, terms.icmp(Predicate::Ule, lower(m, values), values[m]));
       all = terms.logicalAnd(all, terms.icmp(Predicate::Ult, values[m], upper(m, values)));
     }
     return all;
@@ -35,8 +49,8 @@ public:
 
   std::vector<Term> first() const {
     std::vector<Term> out;
-    for (const OrderLevel &level : levels)
-      out.push_back(level.lower);
+    for (unsigned m = 0; m < levels.size(); ++m)
+      out.push_back(lower(m, out));
     return out;
   }
 
@@ -62,7 +76,7 @@ public:
       std::vector<Term> bumped(values.begin(), values.begin() + m);
       bumped.push_back(increment(values[m]));
       for (unsigned r = m + 1; r < levels.size(); ++r)
-        bumped.push_back(levels[r].lower);
+        bumped.push_back(lower(r, bumped));
       Term here = canBump(m, values);
       for (unsigned r = 0; r < levels.size(); ++r)
         out[r] = terms.ite(here, bumped[r], out[r]);

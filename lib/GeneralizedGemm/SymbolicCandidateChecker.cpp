@@ -1,4 +1,5 @@
 #include "GeneralizedGemm/SymbolicCandidateChecker.h"
+#include "GeneralizedGemm/DomainModel.h"
 
 #include "GeneralizedGemm/CoverageSimulation.h"
 #include "GeneralizedGemm/SiteSets.h"
@@ -538,19 +539,43 @@ CheckedFamily checkFamilySymbolic(const SemanticProgram &program,
 
   // The order's levels must be exactly the coordinates, or its bijection is
   // about something else.
+  TermContext &terms = *program.terms;
   EnumerationOrder levels;
   std::multiset<Term> wanted;
   for (const auto &axis : kept->axes)
     wanted.insert(axis.begin(), axis.end());
   for (const OrderLevel &level : order->levels) {
     OrderLevel copy = level;
+    // A bound may read an outer level as a level variable (DomainModel.h), of that
+    // level's width; any other state is refused. The rest is adopted as a proof term.
+    unsigned here = levels.levels.size();
+    bool innerLevel = false;
+    auto adoptBound = [&](Term bound) -> Term {
+      if (!bound)
+        return adoptProofTerm(program, bound, why);
+      Term masked = terms.substitute(bound, [&](Term leaf) -> Term {
+        if (leaf->op != TermOp::State || leaf->index < LevelVariableBase)
+          return nullptr;
+        unsigned q = leaf->index - LevelVariableBase;
+        if (q >= here || levels.levels[q].value->sort != leaf->sort)
+          innerLevel = true;
+        return terms.bv(APInt::getZero(leaf->sort.width));
+      });
+      if (!adoptProofTerm(program, masked, why))
+        return nullptr;
+      if (!stateSupport(masked).empty()) {
+        why = "a bound reads state";
+        return nullptr;
+      }
+      return bound;
+    };
     copy.value = adoptProofTerm(program, level.value, why);
-    copy.lower = adoptProofTerm(program, level.lower, why);
-    copy.upper = adoptProofTerm(program, level.upper, why);
+    copy.lower = adoptBound(level.lower);
+    copy.upper = adoptBound(level.upper);
+    if (innerLevel)
+      return CheckedFamily::unknown("a bound reads a level that is not outer");
     if (!copy.value || !copy.lower || !copy.upper)
-      return CheckedFamily::unknown("the order is malformed: " + why);
-    if (!stateSupport(copy.lower).empty() || !stateSupport(copy.upper).empty())
-      return CheckedFamily::unknown("a bound reads state");
+      return CheckedFamily::unknown(why == "a bound reads state" ? why : "the order is malformed: " + why);
     if (copy.upperOuter >= (int)levels.levels.size())
       return CheckedFamily::unknown("a bound reads a level that is not outer");
     if (copy.lower->sort != copy.value->sort || copy.upper->sort != copy.value->sort ||
@@ -610,9 +635,17 @@ CheckedFamily checkFamilySymbolic(const SemanticProgram &program,
       // A box needs bounds that depend on batch coordinates alone.
       std::set<Term> batch(kept->axes[AxisP].begin(), kept->axes[AxisP].end());
       bool box = admitted;
-      for (const OrderLevel &level : levels.levels)
+      for (const OrderLevel &level : levels.levels) {
         if (level.upperOuter >= 0 && !batch.count(levels.levels[level.upperOuter].value))
           box = false;
+        for (Term bound : {level.lower, level.upper})
+          terms.substitute(bound, [&](Term leaf) -> Term {
+            if (leaf->op == TermOp::State && leaf->index >= LevelVariableBase &&
+                !batch.count(levels.levels[leaf->index - LevelVariableBase].value))
+              box = false;
+            return nullptr;
+          });
+      }
       FamilyAuthority::exact(out, std::move(evidence), box);
     }
     return out;

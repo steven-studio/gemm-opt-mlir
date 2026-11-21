@@ -5,6 +5,8 @@
 #include "llvm/ADT/DenseSet.h"
 
 #include <functional>
+#include <set>
+#include <tuple>
 
 using namespace mlir::generalized_gemm;
 
@@ -150,6 +152,156 @@ PathSet enumerateCutPaths(const SemanticProgram &program,
   }
   set.complete = true;
   return set;
+}
+
+std::map<unsigned, Term> onceAssignedDefinitions(const SemanticProgram &program) {
+  std::map<unsigned, Term> only;
+  std::set<unsigned> many;
+  for (const Transition &t : program.transitions)
+    for (const auto &[id, term] : t.assignments) {
+      if (term->op == TermOp::State && term->index == id)
+        continue; // Kept.
+      auto [slot, added] = only.emplace(id, term);
+      if (!added && slot->second != term)
+        many.insert(id);
+    }
+  std::map<unsigned, Term> out;
+  for (const auto &[id, term] : only) {
+    if (many.count(id) || term->sort.kind != Sort::BV || term->op == TermOp::State || containsFloat(term))
+      continue;
+    bool bad = false;
+    std::function<void(Term)> scan = [&](Term n) {
+      if (bad)
+        return;
+      if (n->op == TermOp::Load || n->op == TermOp::Shadow || n->op == TermOp::MemVar ||
+          (n->op == TermOp::State && n->index == id)) {
+        bad = true;
+        return;
+      }
+      for (Term a : n->args)
+        scan(a);
+    };
+    scan(term);
+    if (!bad)
+      out.emplace(id, term);
+  }
+  return out;
+}
+
+std::vector<GuardBound> guardBounds(const SemanticProgram &program) {
+  TermContext &terms = *program.terms;
+  std::map<unsigned, Term> definitions = onceAssignedDefinitions(program);
+  // Through the definitions, transitively (a definition may read a constant held in
+  // state); a bounded number of rounds, as definitions may form no cycle but chains.
+  auto read = [&](Term t) {
+    for (unsigned round = 0; round < 8; ++round) {
+      Term next = terms.substitute(t, [&](Term leaf) -> Term {
+        if (leaf->op != TermOp::State)
+          return nullptr;
+        auto d = definitions.find(leaf->index);
+        return d == definitions.end() ? nullptr : d->second;
+      });
+      if (next == t)
+        break;
+      t = next;
+    }
+    return t;
+  };
+  std::vector<GuardBound> out;
+  std::set<std::tuple<unsigned, bool, Term>> seen;
+  std::set<Term> visited;
+  std::function<void(Term)> collect = [&](Term g) {
+    if (!g || !visited.insert(g).second)
+      return;
+    if (g->op == TermOp::And || g->op == TermOp::Or || g->op == TermOp::Not || g->op == TermOp::Xor) {
+      for (Term a : g->args)
+        collect(a);
+      return;
+    }
+    if (g->op != TermOp::ICmp || g->args.size() != 2)
+      return;
+    auto pred = static_cast<Predicate>(g->aux);
+    Term a = g->args[0], b = g->args[1];
+    auto add = [&](Term x, Predicate p, Term other) {
+      // A state with one definition holds a constant or a term of other state: no loop.
+      if (x->op != TermOp::State || other->sort != x->sort || definitions.count(x->index))
+        return;
+      Term bound = read(other);
+      if (llvm::is_contained(stateSupport(bound), x->index))
+        return;
+      std::function<bool(Term)> loads = [&](Term n) {
+        if (n->op == TermOp::Load || n->op == TermOp::Shadow)
+          return true;
+        return llvm::any_of(n->args, loads);
+      };
+      if (loads(bound) || containsFloat(bound))
+        return;
+      Term one = terms.bv(llvm::APInt(x->sort.width, 1));
+      GuardBound gb;
+      gb.state = x->index;
+      switch (p) {
+      case Predicate::Ult: case Predicate::Slt: gb.upper = true; gb.bound = bound; break;
+      case Predicate::Ule: case Predicate::Sle: gb.upper = true; gb.bound = terms.binary(TermOp::Add, bound, one); break;
+      case Predicate::Uge: case Predicate::Sge: gb.upper = false; gb.bound = bound; break;
+      case Predicate::Ugt: case Predicate::Sgt: gb.upper = false; gb.bound = terms.binary(TermOp::Add, bound, one); break;
+      default: return;
+      }
+      if (seen.insert({gb.state, gb.upper, gb.bound}).second)
+        out.push_back(gb);
+    };
+    auto flip = [](Predicate p) {
+      switch (p) {
+      case Predicate::Ult: return Predicate::Ugt;
+      case Predicate::Ule: return Predicate::Uge;
+      case Predicate::Ugt: return Predicate::Ult;
+      case Predicate::Uge: return Predicate::Ule;
+      case Predicate::Slt: return Predicate::Sgt;
+      case Predicate::Sle: return Predicate::Sge;
+      case Predicate::Sgt: return Predicate::Slt;
+      case Predicate::Sge: return Predicate::Sle;
+      default: return p;
+      }
+    };
+    add(a, pred, b);
+    add(b, flip(pred), a);
+  };
+  for (const Transition &t : program.transitions)
+    collect(t.guard);
+  // Loop entries: a state that one transition sets from a term not reading it (its start)
+  // while others step it from itself is bounded below by that start, for a loop that
+  // counts up. A proposal, as the rest.
+  std::map<unsigned, std::set<Term>> starts;
+  std::set<unsigned> steps;
+  for (const Transition &t : program.transitions)
+    for (const auto &[id, term] : t.assignments) {
+      if (term->op == TermOp::State && term->index == id)
+        continue;
+      if (llvm::is_contained(stateSupport(term), id))
+        steps.insert(id);
+      else
+        starts[id].insert(term);
+    }
+  for (const auto &[id, terms_] : starts) {
+    if (!steps.count(id) || terms_.size() != 1 || definitions.count(id))
+      continue;
+    Term start = read(*terms_.begin());
+    std::function<bool(Term)> loads = [&](Term n) {
+      if (n->op == TermOp::Load || n->op == TermOp::Shadow)
+        return true;
+      return llvm::any_of(n->args, loads);
+    };
+    if (start->sort.kind != Sort::BV || loads(start) || containsFloat(start) ||
+        llvm::is_contained(stateSupport(start), id))
+      continue;
+    GuardBound gb;
+    gb.state = id;
+    gb.upper = false;
+    gb.bound = start;
+    gb.start = true;
+    if (seen.insert({gb.state, gb.upper, gb.bound}).second)
+      out.push_back(gb);
+  }
+  return out;
 }
 
 } // namespace mlir::generalized_gemm

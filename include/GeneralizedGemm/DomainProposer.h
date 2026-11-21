@@ -45,6 +45,9 @@ struct ProposalLimits {
   uint64_t maxBox = 1u << 20;
   EnumerationLimits events; // The run that reads the state at each event, for segments.
   std::vector<StateIdentity> identities;
+  // State assigned once by a load-free term, read as that term in the guard atoms only
+  // (filled by proposeDomain; a proposal the checker judges).
+  std::vector<StateIdentity> definitions;
 };
 
 /// Untrusted, for tests of the proposer: the atoms a proposal's guard may use for `order`,

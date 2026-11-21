@@ -1,4 +1,5 @@
 #include "GeneralizedGemm/IndexInvariantSynthesis.h"
+#include "GeneralizedGemm/CutPaths.h"
 
 #include "GeneralizedGemm/SymbolicDomain.h"
 #include "GeneralizedGemm/TerminationObligations.h"
@@ -225,6 +226,7 @@ private:
   void sample();
   Candidates offer(unsigned degree, const Candidates &kept, IndexInvariantLevel &level);
   IndexInvariantCertificate assemble(const Candidates &candidates, const std::string &origin) const;
+  bool withStarts = false;
   bool houdini(Candidates &candidates, const Candidates &kept, unsigned degree,
                IndexInvariantLevel &level);
   void strengthen(const Candidates &candidates);
@@ -361,6 +363,22 @@ IndexSearch::Candidates IndexSearch::offer(unsigned degree, const Candidates &ke
       return atom->op == TermOp::ICmp && (Predicate)atom->aux == Predicate::Eq &&
              parts->second.count(terms.icmp(Predicate::Eq, atom->args[1], atom->args[0]));
     };
+    // Loop starts (CutPaths.h, guardBounds): start <= s, unsigned, where the cut holds s
+    // and every state the start reads, for a start that is no constant. Offered only in
+    // the extra round (withStarts) that runs when the null space gives nothing, so a
+    // search that found something finds the same. Houdini keeps only what IDX-init and
+    // IDX-step prove.
+    if (withStarts)
+      for (const GuardBound &gb : guardBounds(program)) {
+        if (!gb.start || gb.bound->op == TermOp::Const || !llvm::is_contained(cut.variables, gb.state))
+          continue;
+        bool held = true;
+        for (unsigned id : stateSupport(gb.bound))
+          held = held && llvm::is_contained(cut.variables, id);
+        if (!held)
+          continue;
+        atoms.push_back(terms.icmp(Predicate::Ule, gb.bound, terms.state(gb.state, program.state[gb.state].sort)));
+      }
     for (Term atom : atoms)
       if (!known(atom))
         list.push_back(atom);
@@ -541,6 +559,33 @@ void IndexSearch::run(const IndexInvariantCertificate *given) {
       kept = candidates;
     }
     candidates = kept;
+    // Nothing from the null space: one more round, with the loops' starts offered.
+    if (!count(candidates) && llvm::any_of(guardBounds(program), [](const GuardBound &gb) {
+          return gb.start && gb.bound->op != TermOp::Const;
+        })) {
+      withStarts = true;
+      IndexInvariantLevel level;
+      level.degree = options.degrees.front();
+      Candidates none;
+      Candidates trial = offer(level.degree, none, level);
+      level.offered = count(trial);
+      if (level.offered) {
+        IndexInvariantSearch before = out;
+        bool inductive = houdini(trial, none, level.degree, level);
+        level.kept = inductive ? count(trial) : 0;
+        level.outcome = inductive ? "loop starts: inductive with " + std::to_string(count(trial)) +
+                                        " atom(s) beyond the termination certificate's"
+                                  : out.reason;
+        if (inductive && count(trial)) {
+          out.levels.push_back(level);
+          candidates = trial;
+        } else {
+          out = before; // The round found nothing: the result is the one before it.
+          candidates = kept;
+        }
+      }
+      withStarts = false;
+    }
   }
   switch (out.check.invariant) {
   case IndexInvariantVerdict::Inductive:

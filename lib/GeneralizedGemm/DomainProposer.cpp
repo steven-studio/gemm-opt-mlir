@@ -1,6 +1,7 @@
 //===- DomainProposer.cpp -------------------------------------------------===//
 #include "GeneralizedGemm/DomainProposer.h"
 
+#include "GeneralizedGemm/CutPaths.h"
 #include "GeneralizedGemm/GuardedOrbit.h"
 
 #include "llvm/ADT/DenseSet.h"
@@ -129,6 +130,21 @@ Term fit(const SemanticProgram &program, const std::vector<std::pair<std::vector
       return offset->isZero() ? identity.term : terms.binary(TermOp::Add, identity.term, terms.bv(*offset));
   }
   return nullptr;
+}
+
+/// The proposer's reading of onceAssignedDefinitions (CutPaths.h), for guard atoms.
+std::vector<StateIdentity> definitionalIdentities(const SemanticProgram &program) {
+  std::vector<StateIdentity> out;
+  for (const auto &[id, term] : onceAssignedDefinitions(program)) {
+    if (term->op == TermOp::Const || term->op == TermOp::Param)
+      continue; // Constants are read from the samples; a copy changes nothing.
+    StateIdentity identity;
+    identity.state = id;
+    identity.term = term;
+    identity.origin = "assigned once, by one load-free term (a proposal)";
+    out.push_back(identity);
+  }
+  return out;
 }
 
 /// Phase 4: reads every state variable with an identity as the identity's term, once
@@ -315,8 +331,12 @@ std::optional<Fitted> fitOrder(const SemanticProgram &program, const std::vector
     return std::nullopt;
   }
 
+  // `extended`: the guesses added for bounds a program computes per outer value (the
+  // definitions in the atoms, bounds read off comparisons and loop starts, a level at a
+  // stride). Tried only where the unextended fitting fails, so that what it fitted before
+  // is fitted the same.
   auto complete = [&](const std::vector<unsigned> &use, GuardedOrder &order,
-                      std::string &failure) -> bool {
+                      std::string &failure, bool extended) -> bool {
     // A box around the samples, with bounds that move with an outer level kept aside.
     std::vector<std::pair<Term, Term>> outerBounds(use.size(), {nullptr, nullptr});
     for (unsigned m = 0; m < use.size(); ++m) {
@@ -352,6 +372,9 @@ std::optional<Fitted> fitOrder(const SemanticProgram &program, const std::vector
       // extreme is the level's value plus one constant.
       auto fitOuter = [&](bool wantUpper) -> Term {
         // The nearest outer level first: it is the one most likely to drive this bound.
+        // Pass 0 is the unit forms; pass 1, tried only when every outer level fails them,
+        // a level at a stride.
+        for (int pass = 0; pass < (extended ? 2 : 1); ++pass)
         for (unsigned o = m; o-- > 0;) {
           std::map<std::pair<std::vector<uint64_t>, uint64_t>, APInt> extreme;
           for (const Sample &s : samples)
@@ -381,6 +404,7 @@ std::optional<Fitted> fitOrder(const SemanticProgram &program, const std::vector
             }
             return offset;
           };
+          if (pass == 0) {
           if (auto c = constantOffset([&](const auto &key) { return APInt(width, key.second); }))
             return c->isZero() ? y : terms.binary(TermOp::Add, y, terms.bv(*c));
           for (const Parameter &p : program.parameters) {
@@ -393,6 +417,26 @@ std::optional<Fitted> fitOrder(const SemanticProgram &program, const std::vector
             if (c) {
               Term sum = terms.binary(TermOp::Add, y, terms.param(p.id, p.sort));
               return c->isZero() ? sum : terms.binary(TermOp::Add, sum, terms.bv(*c));
+            }
+          }
+          continue;
+          }
+          // bound = a * level (+ parameter) + c, a in 2..8: a group laid out at a stride.
+          for (uint64_t a = 2; a <= 8; ++a) {
+            Term ay = terms.binary(TermOp::Mul, terms.bv(APInt(width, a)), y);
+            if (auto c = constantOffset([&](const auto &key) { return APInt(width, a * key.second); }))
+              return c->isZero() ? ay : terms.binary(TermOp::Add, ay, terms.bv(*c));
+            for (const Parameter &p : program.parameters) {
+              if (p.sort != Sort::bv(width))
+                continue;
+              auto c = constantOffset([&](const auto &key) {
+                return APInt(width, a * key.second) + APInt(width, key.first[p.id], /*isSigned=*/false,
+                                                            /*implicitTrunc=*/true);
+              });
+              if (c) {
+                Term sum = terms.binary(TermOp::Add, ay, terms.param(p.id, p.sort));
+                return c->isZero() ? sum : terms.binary(TermOp::Add, sum, terms.bv(*c));
+              }
             }
           }
         }
@@ -428,7 +472,12 @@ std::optional<Fitted> fitOrder(const SemanticProgram &program, const std::vector
       }
     }
     // The guard.
-    std::vector<Term> atoms = conditionAtoms(program, order, constants, limits.maxAtoms, limits.identities);
+    // Identities first (the first of a variable is applied), then the definitions, which
+    // reach the atoms only: views and fitted bounds are proposed as before.
+    std::vector<StateIdentity> forAtoms = limits.identities;
+    if (extended)
+      forAtoms.insert(forAtoms.end(), limits.definitions.begin(), limits.definitions.end());
+    std::vector<Term> atoms = conditionAtoms(program, order, constants, limits.maxAtoms, forAtoms);
     auto holds = [&](Term atom, const Sample &s, size_t e) {
       std::vector<APInt> levels;
       for (unsigned c : use)
@@ -469,6 +518,106 @@ std::optional<Fitted> fitOrder(const SemanticProgram &program, const std::vector
       }
     if (exactAt(order, use, samples, limits.maxBox))
       return true;
+    if (extended) {
+    // Bounds read off the program's own comparisons: an atom y_m < t, y_m <= t, t <= y_m
+    // or t < y_m with t over outer levels and parameters only (a loop bound the program
+    // computes per outer value, such as a per-group row count). A guess: taken only
+    // where it brings the box nearer the events, and the checker judges the result.
+    {
+      auto levelsRead = [&](Term t) {
+        int highest = -1;
+        terms.substitute(t, [&](Term leaf) -> Term {
+          if (auto l = levelOf(leaf))
+            highest = std::max<int>(highest, *l);
+          return nullptr;
+        });
+        return highest;
+      };
+      for (unsigned m = use.size(); m-- > 0;) {
+        Sort sort = order.levels[m].value->sort;
+        Term y = levelVariable(terms, m, sort);
+        Term one = terms.bv(APInt(sort.width, 1));
+        for (Term atom : atoms) {
+          if (atom->op != TermOp::ICmp || atom->args.size() != 2)
+            continue;
+          auto pred = static_cast<Predicate>(atom->aux);
+          Term a = atom->args[0], b = atom->args[1];
+          // Normalize to y_m on the left.
+          if (b == y && a != y) {
+            std::swap(a, b);
+            switch (pred) {
+            case Predicate::Ult: pred = Predicate::Ugt; break;
+            case Predicate::Ule: pred = Predicate::Uge; break;
+            case Predicate::Ugt: pred = Predicate::Ult; break;
+            case Predicate::Uge: pred = Predicate::Ule; break;
+            case Predicate::Slt: pred = Predicate::Sgt; break;
+            case Predicate::Sle: pred = Predicate::Sge; break;
+            case Predicate::Sgt: pred = Predicate::Slt; break;
+            case Predicate::Sge: pred = Predicate::Sle; break;
+            default: break;
+            }
+          }
+          if (a != y || b->sort != sort || levelsRead(b) >= (int)m || containsOp(b, TermOp::Load) ||
+              b->op == TermOp::Const)
+            continue;
+          bool upper;
+          Term bound;
+          switch (pred) {
+          case Predicate::Ult: case Predicate::Slt: upper = true; bound = b; break;
+          case Predicate::Ule: case Predicate::Sle: upper = true; bound = terms.binary(TermOp::Add, b, one); break;
+          case Predicate::Uge: case Predicate::Sge: upper = false; bound = b; break;
+          case Predicate::Ugt: case Predicate::Sgt: upper = false; bound = terms.binary(TermOp::Add, b, one); break;
+          default: continue;
+          }
+          GuardedOrder trial = order;
+          (upper ? trial.levels[m].upper : trial.levels[m].lower) = bound;
+          auto next = slack(trial);
+          if (next && (!current || *next < *current)) {
+            order = trial;
+            current = next;
+          }
+        }
+      }
+    }
+    // The same from guardBounds (CutPaths.h), which also gives loop starts as lower
+    // bounds: state read as the level that holds it, or as a constant of the samples.
+    {
+      std::map<unsigned, unsigned> levelOfState;
+      for (unsigned m = 0; m < use.size(); ++m)
+        if (order.levels[m].value->op == TermOp::State)
+          levelOfState[order.levels[m].value->index] = m;
+      for (const GuardBound &gb : guardBounds(program)) {
+        auto at = levelOfState.find(gb.state);
+        if (at == levelOfState.end())
+          continue;
+        unsigned m = at->second;
+        bool ok = gb.bound->sort == order.levels[m].value->sort;
+        for (unsigned id : stateSupport(gb.bound)) {
+          auto l = levelOfState.find(id);
+          ok = ok && ((l != levelOfState.end() && l->second < m) || constants.count(id));
+        }
+        if (!ok)
+          continue;
+        Term bound = terms.substitute(gb.bound, [&](Term leaf) -> Term {
+          if (leaf->op != TermOp::State)
+            return nullptr;
+          auto l = levelOfState.find(leaf->index);
+          if (l != levelOfState.end())
+            return levelVariable(terms, l->second, order.levels[l->second].value->sort);
+          return terms.bv(constants.at(leaf->index));
+        });
+        GuardedOrder trial = order;
+        (gb.upper ? trial.levels[m].upper : trial.levels[m].lower) = bound;
+        auto next = slack(trial);
+        if (next && (!current || *next < *current)) {
+          order = trial;
+          current = next;
+        }
+      }
+    }
+    if (exactAt(order, use, samples, limits.maxBox))
+      return true;
+    }
     Term conjunction = terms.boolean(true);
     for (Term atom : atoms)
       for (Term literal : {atom, terms.logicalNot(atom)}) {
@@ -509,7 +658,20 @@ std::optional<Fitted> fitOrder(const SemanticProgram &program, const std::vector
     return false;
   };
 
-  if (!complete(use, *order, why)) {
+  auto completeAny = [&](const std::vector<unsigned> &use, GuardedOrder &order, std::string &failure) {
+    GuardedOrder saved = order;
+    if (complete(use, order, failure, false))
+      return true;
+    order = saved;
+    std::string again;
+    if (complete(use, order, again, true)) {
+      failure.clear();
+      return true;
+    }
+    order = saved;
+    return false;
+  };
+  if (!completeAny(use, *order, why)) {
     // The conditions may read state that is no level: add such state as levels, where
     // the order still fits, and try once more.
     std::set<unsigned> wanted;
@@ -539,7 +701,7 @@ std::optional<Fitted> fitOrder(const SemanticProgram &program, const std::vector
     if (!widened)
       return std::nullopt;
     std::string again;
-    if (!complete(wider, *widened, again)) {
+    if (!completeAny(wider, *widened, again)) {
       why = again;
       return std::nullopt;
     }
@@ -779,8 +941,10 @@ std::optional<DomainRequest> proposeDomain(const SemanticProgram &program,
         constants.emplace(id, *value);
   }
   const SiteGroup &group = enumeration.groups[g];
+  ProposalLimits withDefinitions = limits;
+  withDefinitions.definitions = definitionalIdentities(program);
   auto fitted = fitOrder(program, candidates, coordinates, coordinateOrder, samples, constants,
-                         &program.sites[group.sites.front()], limits, why);
+                         &program.sites[group.sites.front()], withDefinitions, why);
   if (!fitted)
     return std::nullopt;
   DomainRequest out;

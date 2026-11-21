@@ -1064,20 +1064,26 @@ bool Proof::discharge() {
 
 /// A few points of the scope, each replayed exactly. A search, so it can only miss.
 bool Proof::hasEventfulPoint() {
-  for (uint64_t k = 0; k < 16; ++k) {
+  // The diagonal first (every parameter lower + k), then staircases over the parameters'
+  // order (parameter i at lower + k * (i + 1), and the reverse), which reach the points
+  // where a table of bounds grows from one cell to the next (a row pointer).
+  for (uint64_t probe = 0; probe < 48; ++probe) {
+    uint64_t k = probe % 16, shape = probe / 16;
     std::vector<APInt> point;
     for (const Parameter &p : program.parameters) {
       APInt value(p.sort.width, 0);
       if (p.sort.kind == Sort::BV) {
+        uint64_t rank = shape == 0 ? 1 : shape == 1 ? p.id + 1 : program.parameters.size() - p.id;
+        uint64_t step = k * rank;
         for (const ParameterRange &range : options.scope.ranges)
           if (range.parameter == p.id) {
-            value = range.lower + APInt(p.sort.width, k, /*isSigned=*/false, /*implicitTrunc=*/true);
-            if (value.sgt(range.upper))
+            value = range.lower + APInt(p.sort.width, step, /*isSigned=*/false, /*implicitTrunc=*/true);
+            if (value.sgt(range.upper) || value.slt(range.lower))
               value = range.upper;
           }
         if (llvm::none_of(options.scope.ranges,
                           [&](const ParameterRange &range) { return range.parameter == p.id; }))
-          value = APInt(p.sort.width, k, /*isSigned=*/false, /*implicitTrunc=*/true);
+          value = APInt(p.sort.width, step, /*isSigned=*/false, /*implicitTrunc=*/true);
       }
       point.push_back(value);
     }

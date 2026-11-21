@@ -29,6 +29,7 @@ import coordinate_oracle as co
 from coordinate_facts import compare, facts, kernel
 
 TIMEOUT = 280
+LEVEL_BASE = 1 << 24
 PREDICATES = {0: lambda a, b, w: a == b, 1: lambda a, b, w: a != b,
               2: lambda a, b, w: signed(a, w) < signed(b, w), 3: lambda a, b, w: signed(a, w) <= signed(b, w),
               4: lambda a, b, w: signed(a, w) > signed(b, w), 5: lambda a, b, w: signed(a, w) >= signed(b, w),
@@ -177,25 +178,36 @@ def check_orbit(s, candidate, rows, n):
     levels = candidate["order"]
     parameters = [n]
 
+    # A bound may read an outer level as a level variable: state LEVEL_BASE + q is the
+    # value of level q (DomainModel.h, LevelVariableBase).
+    def at_levels(values):
+        return {LEVEL_BASE + q: v for q, v in enumerate(values)}
+
+    def lower(m, values):
+        return term_value(levels[m]["lower"], at_levels(values), parameters)
+
     def upper(m, values):
         level = levels[m]
-        top = term_value(level["upper"], {}, parameters)
+        top = term_value(level["upper"], at_levels(values), parameters)
         if level["upper_outer"] >= 0:
             top += values[level["upper_outer"]]
         return top & ((1 << level["value"]["width"]) - 1)
 
     def inside(values):
-        return all(term_value(levels[m]["lower"], {}, parameters) <= values[m] < upper(m, values)
-                   for m in range(len(levels)))
+        return all(lower(m, values) <= values[m] < upper(m, values) for m in range(len(levels)))
 
     def successor(values):
         for m in reversed(range(len(levels))):
             if values[m] + 1 < upper(m, values):
-                return values[:m] + [values[m] + 1] + [
-                    term_value(levels[r]["lower"], {}, parameters) for r in range(m + 1, len(levels))]
+                out = values[:m] + [values[m] + 1]
+                for r in range(m + 1, len(levels)):
+                    out.append(lower(r, out))
+                return out
         return None
 
-    current = [term_value(level["lower"], {}, parameters) for level in levels]
+    current = []
+    for m in range(len(levels)):
+        current.append(lower(m, current))
     if not inside(current):
         raise SystemExit(f"{s['name']} n={n}: events exist, and the first element is outside")
     for position, (_, state) in enumerate(rows):
